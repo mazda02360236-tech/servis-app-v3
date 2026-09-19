@@ -234,19 +234,51 @@ class ServiceManagerApp(QMainWindow):
     def print_receipt(self):
         selected_row = self.table.currentRow()
         if selected_row == -1:
-            QMessageBox.warning(self, "Помилка", "Оберіть замовлення зі списку!")
+            QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення з таблиці!")
             return
 
-        order_id = self.table.item(selected_row, 0).text()
-        client = self.table.item(selected_row, 1).text()
-        phone = self.table.item(selected_row, 2).text()
-        date_in = self.table.item(selected_row, 3).text()
-        date_out = self.table.item(selected_row, 4).text()
-        item = self.table.item(selected_row, 5).text()
-        serial = self.table.item(selected_row, 6).text()
-        equipment = self.table.item(selected_row, 7).text()
-        issue = self.table.item(selected_row, 8).text()
-        status = self.table.item(selected_row, 9).text()
+        try:
+            order_id = self.table.item(selected_row, 0).text()
+            client = self.table.item(selected_row, 1).text()
+            phone = self.table.item(selected_row, 2).text()
+            date_in = self.table.item(selected_row, 3).text()
+            date_out = self.table.item(selected_row, 4).text()
+            item = self.table.item(selected_row, 5).text()
+            serial = self.table.item(selected_row, 6).text()
+            equipment = self.table.item(selected_row, 7).text()
+            issue = self.table.item(selected_row, 8).text()
+            status = self.table.item(selected_row, 9).text()
+
+            # Зберігаємо PDF у папку Документи користувача
+            docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
+            pdf_filename = os.path.join(docs_dir, f"Квитанция_Заказ_{order_id}.pdf")
+            
+            c = canvas.Canvas(pdf_filename, pagesize=letter)
+            c.setFont(self.font_name, 16)
+            c.drawString(100, 750, f"АКТ-КВИТАНЦІЯ РЕМОНТУ № {order_id}")
+            
+            c.setFont(self.font_name, 11)
+            c.drawString(100, 710, f"Дата прийому: {date_in}   |   Планова дата видачі: {date_out}")
+            c.drawString(100, 685, f"Клієнт: {client}")
+            c.drawString(100, 665, f"Телефон: {phone}")
+            c.drawString(100, 640, f"Товар / Модель: {item}")
+            c.drawString(100, 620, f"Серійний номер: {serial}")
+            c.drawString(100, 600, f"Комплектація: {equipment}")
+            c.drawString(100, 575, f"Опис несправності: {issue}")
+            c.drawString(100, 550, f"Поточний статус: {status}")
+
+            c.line(100, 520, 500, 520)
+            c.drawString(100, 480, "Підпис клієнта: __________________")
+            c.drawString(100, 450, "Підпис майстра: __________________")
+
+            c.save()
+
+            QMessageBox.information(self, "Успіх", f"Квитанцію сформовано:\n{pdf_filename}")
+
+            if sys.platform == "win32":
+                os.startfile(pdf_filename)
+        except Exception as e:
+            QMessageBox.critical(self, "Помилка", f"Не вдалося створити квитанцію: {str(e)}")
 
         pdf_filename = f"Квитанция_Заказ_{order_id}.pdf"
         
