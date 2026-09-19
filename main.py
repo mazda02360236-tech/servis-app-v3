@@ -17,7 +17,18 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 def setup_cyrillic_font():
-    """Завантажує та реєструє шрифт Roboto для коректної кирилиці у PDF."""
+    """Использует системный шрифт Arial из Windows для гарантированной поддержки кириллицы."""
+    # Путь к системному шрифту Arial в Windows
+    win_font_path = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf')
+    
+    if os.path.exists(win_font_path):
+        try:
+            pdfmetrics.registerFont(TTFont('ArialWin', win_font_path))
+            return 'ArialWin'
+        except Exception:
+            pass
+
+    # Резервный вариант: скачивание Roboto
     font_path = "Roboto-Regular.ttf"
     if not os.path.exists(font_path):
         try:
@@ -27,11 +38,13 @@ def setup_cyrillic_font():
             pass
 
     if os.path.exists(font_path):
-        pdfmetrics.registerFont(TTFont('Roboto', font_path))
-        return 'Roboto'
-    return 'Helvetica'
+        try:
+            pdfmetrics.registerFont(TTFont('Roboto', font_path))
+            return 'Roboto'
+        except Exception:
+            pass
 
-class ServiceManagerApp(QMainWindow):
+    return 'Helvetica'
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Облік ремонту інструменту та обладнання")
