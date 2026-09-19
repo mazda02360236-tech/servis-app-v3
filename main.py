@@ -17,8 +17,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 def setup_cyrillic_font():
-    """Использует системный шрифт Arial из Windows для гарантированной поддержки кириллицы."""
-    # Путь к системному шрифту Arial в Windows
+    """Використовує системний шрифт Arial для коректного відображення кирилиці в PDF."""
     win_font_path = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf')
     
     if os.path.exists(win_font_path):
@@ -28,7 +27,6 @@ def setup_cyrillic_font():
         except Exception:
             pass
 
-    # Резервный вариант: скачивание Roboto
     font_path = "Roboto-Regular.ttf"
     if not os.path.exists(font_path):
         try:
@@ -45,6 +43,8 @@ def setup_cyrillic_font():
             pass
 
     return 'Helvetica'
+
+class ServiceManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Облік ремонту інструменту та обладнання")
@@ -55,7 +55,6 @@ def setup_cyrillic_font():
         self.init_ui()
 
     def init_db(self):
-        # Зберігаємо базу даних у AppData користувача, щоб уникнути помилок доступу
         app_data_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'ServiceManager')
         os.makedirs(app_data_dir, exist_ok=True)
         
@@ -86,7 +85,6 @@ def setup_cyrillic_font():
 
         form_layout = QVBoxLayout()
 
-        # Рядок 1
         r1 = QHBoxLayout()
         self.client_input = QLineEdit()
         self.client_input.setPlaceholderText("ПІБ Клієнта")
@@ -98,7 +96,6 @@ def setup_cyrillic_font():
         r1.addWidget(self.phone_input)
         form_layout.addLayout(r1)
 
-        # Рядок 2
         r2 = QHBoxLayout()
         self.item_input = QLineEdit()
         self.item_input.setPlaceholderText("Назва товару / інструменту")
@@ -114,7 +111,6 @@ def setup_cyrillic_font():
         r2.addWidget(self.equipment_input)
         form_layout.addLayout(r2)
 
-        # Рядок 3
         r3 = QHBoxLayout()
         self.date_in_edit = QDateEdit()
         self.date_in_edit.setDate(QDate.currentDate())
@@ -135,7 +131,6 @@ def setup_cyrillic_font():
         r3.addWidget(self.status_box)
         form_layout.addLayout(r3)
 
-        # Рядок 4
         r4 = QHBoxLayout()
         self.issue_input = QLineEdit()
         self.issue_input.setPlaceholderText("Опис несправності")
@@ -145,7 +140,6 @@ def setup_cyrillic_font():
 
         main_layout.addLayout(form_layout)
 
-        # Кнопки
         btn_layout = QHBoxLayout()
         save_btn = QPushButton("Зберегти замовлення")
         save_btn.clicked.connect(self.save_order)
@@ -161,7 +155,6 @@ def setup_cyrillic_font():
         btn_layout.addWidget(delete_btn)
         main_layout.addLayout(btn_layout)
 
-        # Таблиця
         self.table = QTableWidget()
         self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
@@ -282,4 +275,8 @@ def setup_cyrillic_font():
         else:
             QMessageBox.information(self, "Успіх", f"Квитанцію збережено в файл {pdf_filename}")
 
-if name == "main": app = QApplication(sys.argv) window = ServiceManagerApp()  # <--- Помилка тут window.show() sys.exit(app.exec())
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = ServiceManagerApp()
+    window.show()
+    sys.exit(app.exec())
