@@ -198,10 +198,12 @@ class ServiceManagerApp(QMainWindow):
         btn_layout.addWidget(delete_btn)
         main_layout.addLayout(btn_layout)
 
+        # Поле пошуку з кнопкою очищення (хрестиком)
         search_layout = QHBoxLayout()
         search_label = QLabel("🔍 Пошук (ПІБ або Телефон):")
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Введіть ім'я або номер телефону для фільтрації...")
+        self.search_input.setClearButtonEnabled(True)  # Додає кнопчку-хрестик у кінці поля
         self.search_input.textChanged.connect(self.search_orders)
         
         search_layout.addWidget(search_label)
