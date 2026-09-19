@@ -116,9 +116,9 @@ class ServiceManagerApp(QMainWindow):
         self.date_in_edit.setDate(QDate.currentDate())
         self.date_in_edit.setCalendarPopup(True)
 
-        self.date_out_edit = QDateEdit()
-        self.date_out_edit.setCalendarPopup(True)
-        self.date_out_edit.clear()  # Порожньо за замовчуванням
+        # Поле дати видачі зроблене текстовим та порожнім за замовчуванням
+        self.date_out_input = QLineEdit()
+        self.date_out_input.setPlaceholderText("РРРР-ММ-ДД (необов'язково)")
 
         self.status_box = QComboBox()
         self.status_box.addItems(["В роботі", "Очікує запчастин", "Готово", "Видано"])
@@ -126,7 +126,7 @@ class ServiceManagerApp(QMainWindow):
         r3.addWidget(QLabel("Дата прийому:"))
         r3.addWidget(self.date_in_edit)
         r3.addWidget(QLabel("Дата видачі:"))
-        r3.addWidget(self.date_out_edit)
+        r3.addWidget(self.date_out_input)
         r3.addWidget(QLabel("Статус:"))
         r3.addWidget(self.status_box)
         form_layout.addLayout(r3)
@@ -171,13 +171,7 @@ class ServiceManagerApp(QMainWindow):
         client = self.client_input.text().strip()
         phone = self.phone_input.text().strip()
         date_in = self.date_in_edit.date().toString("yyyy-MM-dd")
-        
-        # Перевіряємо, чи вказав користувач дату видачі
-        if self.date_out_edit.text().strip():
-            date_out = self.date_out_edit.date().toString("yyyy-MM-dd")
-        else:
-            date_out = ""
-
+        date_out = self.date_out_input.text().strip()
         item = self.item_input.text().strip()
         serial = self.serial_input.text().strip()
         equipment = self.equipment_input.text().strip()
@@ -213,18 +207,11 @@ class ServiceManagerApp(QMainWindow):
             self.client_input.setText(self.table.item(selected_row, 1).text())
             self.phone_input.setText(self.table.item(selected_row, 2).text())
             
-            # Дата прийому
             date_in_str = self.table.item(selected_row, 3).text()
             if date_in_str:
                 self.date_in_edit.setDate(QDate.fromString(date_in_str, "yyyy-MM-dd"))
             
-            # Дата видачі
-            date_out_str = self.table.item(selected_row, 4).text()
-            if date_out_str:
-                self.date_out_edit.setDate(QDate.fromString(date_out_str, "yyyy-MM-dd"))
-            else:
-                self.date_out_edit.clear()
-
+            self.date_out_input.setText(self.table.item(selected_row, 4).text())
             self.item_input.setText(self.table.item(selected_row, 5).text())
             self.serial_input.setText(self.table.item(selected_row, 6).text())
             self.equipment_input.setText(self.table.item(selected_row, 7).text())
@@ -238,7 +225,7 @@ class ServiceManagerApp(QMainWindow):
         self.equipment_input.clear()
         self.issue_input.clear()
         self.date_in_edit.setDate(QDate.currentDate())
-        self.date_out_edit.clear()
+        self.date_out_input.clear()
 
     def delete_order(self):
         selected_row = self.table.currentRow()
