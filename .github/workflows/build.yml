@@ -28,9 +28,8 @@ jobs:
         pyinstaller --noconsole --onefile main.py
 
     - name: Build Setup with Inno Setup
-      uses: sayyidhaydar/inno-setup-action@v1.0.0
-      with:
-        filepath: 'setup.iss'
+      run: |
+        iscc setup.iss
 
     - name: Upload Installer Artifact
       uses: actions/upload-artifact@v4
