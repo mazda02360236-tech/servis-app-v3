@@ -63,6 +63,8 @@ class ServiceManagerApp(QMainWindow):
         
         self.font_name = setup_cyrillic_font()
         self.logo_path = get_logo_path()
+        self.is_loading = False  # Прапор для запобігання спрацьовування cellChanged під час завантаження
+        
         self.init_db()
         self.init_ui()
 
@@ -184,15 +186,21 @@ class ServiceManagerApp(QMainWindow):
         main_layout.addLayout(form_layout)
 
         btn_layout = QHBoxLayout()
-        save_btn = QPushButton("Зберегти замовлення")
+        
+        quick_order_btn = QPushButton("⚡ Швидке замовлення")
+        quick_order_btn.setStyleSheet("background-color: #27AE60; color: white; font-weight: bold; padding: 6px;")
+        quick_order_btn.clicked.connect(self.quick_order)
+
+        save_btn = QPushButton("Зберегти замовлення з форми")
         save_btn.clicked.connect(self.save_order)
         
-        print_btn = QPushButton("Сформувати та роздрукувати квитанцію (А5)")
+        print_btn = QPushButton("Роздрукувати квитанцію (А5)")
         print_btn.clicked.connect(self.print_receipt)
 
         delete_btn = QPushButton("Видалити замовлення")
         delete_btn.clicked.connect(self.delete_order)
 
+        btn_layout.addWidget(quick_order_btn)
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(print_btn)
         btn_layout.addWidget(delete_btn)
@@ -203,7 +211,7 @@ class ServiceManagerApp(QMainWindow):
         search_label = QLabel("🔍 Пошук (ПІБ або Телефон):")
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Введіть ім'я або номер телефону для фільтрації...")
-        self.search_input.setClearButtonEnabled(True)  # Додає кнопчку-хрестик у кінці поля
+        self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self.search_orders)
         
         search_layout.addWidget(search_label)
@@ -218,12 +226,65 @@ class ServiceManagerApp(QMainWindow):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.itemSelectionChanged.connect(self.fill_form_from_table)
+        self.table.cellChanged.connect(self.auto_save_cell)  # Автозбереження при зміні комірок
         main_layout.addWidget(self.table)
 
         self.load_orders()
 
     def toggle_sale_date(self, checked):
         self.date_sale_edit.setEnabled(checked)
+
+    def quick_order(self):
+        """Створює нове замовлення прямо в таблиці і відразу додає його в БД."""
+        today = QDate.currentDate().toString("yyyy-MM-dd")
+        date_out_default = QDate.currentDate().addMonths(3).toString("yyyy-MM-dd")
+
+        # Вставляємо новий запис в базу даних з базовими значеннями
+        self.cursor.execute("""
+            INSERT INTO orders (client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("", "", "", today, date_out_default, "", "", "", "", "В роботі"))
+        self.conn.commit()
+
+        # Перезавантажуємо таблицю та обираємо новостворений рядок
+        self.load_orders()
+        new_row_idx = self.table.rowCount() - 1
+        self.table.selectRow(new_row_idx)
+        
+        # Переводимо фокус редагування на комірку "Клієнт" нового рядка
+        self.table.editItem(self.table.item(new_row_idx, 1))
+
+    def auto_save_cell(self, row, column):
+        """Автоматично оновлює відповідне поле в БД при редагуванні комірки таблиці."""
+        if self.is_loading:
+            return
+
+        order_id_item = self.table.item(row, 0)
+        if not order_id_item or not order_id_item.text():
+            return
+
+        order_id = order_id_item.text()
+        new_value = self.table.item(row, column).text().strip()
+
+        # Відповідність колонок таблиці до полів у базі даних
+        col_db_map = {
+            1: "client_name",
+            2: "phone",
+            3: "date_sale",
+            4: "date_in",
+            5: "date_out",
+            6: "item_name",
+            7: "serial_num",
+            8: "equipment",
+            9: "issue",
+            10: "status"
+        }
+
+        if column in col_db_map:
+            field_name = col_db_map[column]
+            query = f"UPDATE orders SET {field_name} = ? WHERE id = ?"
+            self.cursor.execute(query, (new_value, order_id))
+            self.conn.commit()
 
     def save_order(self):
         client = self.client_input.text().strip()
@@ -257,15 +318,21 @@ class ServiceManagerApp(QMainWindow):
         QMessageBox.information(self, "Успіх", "Замовлення збережено!")
 
     def load_orders(self):
+        self.is_loading = True
         self.table.setRowCount(0)
         self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders")
         rows = self.cursor.fetchall()
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             for col_idx, value in enumerate(row_data):
-                self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(value if value else "")))
+                item = QTableWidgetItem(str(value if value else ""))
+                if col_idx == 0:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # Заборона редагування ID
+                self.table.setItem(row_idx, col_idx, item)
+        self.is_loading = False
 
     def search_orders(self):
+        self.is_loading = True
         query = self.search_input.text().strip()
         self.table.setRowCount(0)
         
@@ -282,33 +349,50 @@ class ServiceManagerApp(QMainWindow):
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             for col_idx, value in enumerate(row_data):
-                self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(value if value else "")))
+                item = QTableWidgetItem(str(value if value else ""))
+                if col_idx == 0:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(row_idx, col_idx, item)
+        self.is_loading = False
 
     def fill_form_from_table(self):
         selected_row = self.table.currentRow()
         if selected_row >= 0:
-            self.client_input.setText(self.table.item(selected_row, 1).text())
-            self.phone_input.setText(self.table.item(selected_row, 2).text())
+            client_item = self.table.item(selected_row, 1)
+            phone_item = self.table.item(selected_row, 2)
+            item_item = self.table.item(selected_row, 6)
             
-            date_sale_str = self.table.item(selected_row, 3).text()
+            if client_item: self.client_input.setText(client_item.text())
+            if phone_item: self.phone_input.setText(phone_item.text())
+            
+            date_sale_item = self.table.item(selected_row, 3)
+            date_sale_str = date_sale_item.text() if date_sale_item else ""
             if date_sale_str and date_sale_str != "None":
                 self.has_sale_date_checkbox.setChecked(True)
                 self.date_sale_edit.setDate(QDate.fromString(date_sale_str, "yyyy-MM-dd"))
             else:
                 self.has_sale_date_checkbox.setChecked(False)
 
-            date_in_str = self.table.item(selected_row, 4).text()
+            date_in_item = self.table.item(selected_row, 4)
+            date_in_str = date_in_item.text() if date_in_item else ""
             if date_in_str:
                 self.date_in_edit.setDate(QDate.fromString(date_in_str, "yyyy-MM-dd"))
             
-            date_out_str = self.table.item(selected_row, 5).text()
+            date_out_item = self.table.item(selected_row, 5)
+            date_out_str = date_out_item.text() if date_out_item else ""
             if date_out_str:
                 self.date_out_edit.setDate(QDate.fromString(date_out_str, "yyyy-MM-dd"))
 
-            self.item_input.setText(self.table.item(selected_row, 6).text())
-            self.serial_input.setText(self.table.item(selected_row, 7).text())
-            self.equipment_input.setText(self.table.item(selected_row, 8).text())
-            self.issue_input.setText(self.table.item(selected_row, 9).text())
+            if item_item: self.item_input.setText(item_item.text())
+            
+            serial_item = self.table.item(selected_row, 7)
+            if serial_item: self.serial_input.setText(serial_item.text())
+            
+            equipment_item = self.table.item(selected_row, 8)
+            if equipment_item: self.equipment_input.setText(equipment_item.text())
+            
+            issue_item = self.table.item(selected_row, 9)
+            if issue_item: self.issue_input.setText(issue_item.text())
 
     def clear_fields(self):
         self.client_input.clear()
