@@ -282,8 +282,4 @@ def setup_cyrillic_font():
         else:
             QMessageBox.information(self, "Успіх", f"Квитанцію збережено в файл {pdf_filename}")
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = ServiceManagerApp()
-    window.show()
-    sys.exit(app.exec())
+if name == "main": app = QApplication(sys.argv) window = ServiceManagerApp()  # <--- Помилка тут window.show() sys.exit(app.exec())
