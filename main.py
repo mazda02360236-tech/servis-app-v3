@@ -11,10 +11,11 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QDate
 
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import A5, landscape
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib import colors
 
 def setup_cyrillic_font():
     """Використовує системний шрифт Arial для коректного відображення кирилиці в PDF."""
@@ -112,12 +113,10 @@ class ServiceManagerApp(QMainWindow):
         form_layout.addLayout(r2)
 
         r3 = QHBoxLayout()
-        # Дата прийому (сьогодні)
         self.date_in_edit = QDateEdit()
         self.date_in_edit.setDate(QDate.currentDate())
         self.date_in_edit.setCalendarPopup(True)
 
-        # Дата видачі (календар, за замовчуванням +3 місяці)
         self.date_out_edit = QDateEdit()
         self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
         self.date_out_edit.setCalendarPopup(True)
@@ -146,7 +145,7 @@ class ServiceManagerApp(QMainWindow):
         save_btn = QPushButton("Зберегти замовлення")
         save_btn.clicked.connect(self.save_order)
         
-        print_btn = QPushButton("Сформувати та роздрукувати квитанцію")
+        print_btn = QPushButton("Сформувати та роздрукувати квитанцію (А5)")
         print_btn.clicked.connect(self.print_receipt)
 
         delete_btn = QPushButton("Видалити замовлення")
@@ -157,7 +156,6 @@ class ServiceManagerApp(QMainWindow):
         btn_layout.addWidget(delete_btn)
         main_layout.addLayout(btn_layout)
 
-        # Панель пошуку клієнта
         search_layout = QHBoxLayout()
         search_label = QLabel("🔍 Пошук (ПІБ або Телефон):")
         self.search_input = QLineEdit()
@@ -294,29 +292,91 @@ class ServiceManagerApp(QMainWindow):
             status = self.table.item(selected_row, 9).text()
 
             docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
-            pdf_filename = os.path.join(docs_dir, f"Квитанция_Заказ_{order_id}.pdf")
+            pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
             
-            c = canvas.Canvas(pdf_filename, pagesize=letter)
-            c.setFont(self.font_name, 16)
-            c.drawString(100, 750, f"АКТ-КВИТАНЦІЯ РЕМОНТУ № {order_id}")
-            
-            c.setFont(self.font_name, 11)
-            c.drawString(100, 710, f"Дата прийому: {date_in}   |   Планова дата видачі: {date_out}")
-            c.drawString(100, 685, f"Клієнт: {client}")
-            c.drawString(100, 665, f"Телефон: {phone}")
-            c.drawString(100, 640, f"Товар / Модель: {item}")
-            c.drawString(100, 620, f"Серійний номер: {serial}")
-            c.drawString(100, 600, f"Комплектація: {equipment}")
-            c.drawString(100, 575, f"Опис несправності: {issue}")
-            c.drawString(100, 550, f"Поточний статус: {status}")
+            # Створення документа у форматі А5 Альбомний (595 x 420 pt)
+            c = canvas.Canvas(pdf_filename, pagesize=landscape(A5))
+            width, height = landscape(A5)
 
-            c.line(100, 520, 500, 520)
-            c.drawString(100, 480, "Підпис клієнта: __________________")
-            c.drawString(100, 450, "Підпис майстра: __________________")
+            # Зовнішня декоративна рамка
+            c.setStrokeColor(colors.HexColor("#2C3E50"))
+            c.setLineWidth(1.5)
+            c.rect(15, 15, width - 30, height - 30)
+
+            # Верхній заголовок (Верхня плашка)
+            c.setFillColor(colors.HexColor("#2C3E50"))
+            c.rect(15, height - 55, width - 30, 40, fill=1, stroke=0)
+
+            c.setFillColor(colors.white)
+            c.setFont(self.font_name, 14)
+            c.drawString(30, height - 38, f"АКТ-КВИТАНЦІЯ ПРИЙОМУ В РЕМОНТ № {order_id}")
+            
+            c.setFont(self.font_name, 9)
+            c.drawRightString(width - 30, height - 38, f"Дата прийому: {date_in}")
+
+            # Блок 1: Інформація про Клієнта та Дати
+            c.setFillColor(colors.black)
+            y = height - 75
+
+            # Лінія сітки
+            c.setLineWidth(0.5)
+            c.setStrokeColor(colors.HexColor("#BDC3C7"))
+
+            c.setFont(self.font_name, 10)
+            c.drawString(30, y, f"Клієнт (ПІБ): {client}")
+            c.drawRightString(width - 30, y, f"Телефон: {phone}")
+            
+            y -= 20
+            c.line(30, y + 12, width - 30, y + 12)
+
+            # Блок 2: Інформація про обладнання
+            c.setFont(self.font_name, 10)
+            c.drawString(30, y, f"Обладнання / Товар: {item}")
+            c.drawString(320, y, f"Серійний №: {serial}")
+
+            y -= 20
+            c.drawString(30, y, f"Комплектація: {equipment}")
+            c.drawString(320, y, f"Планова дата видачі: {date_out}")
+
+            y -= 15
+            c.line(30, y + 8, width - 30, y + 8)
+
+            # Блок 3: Несправність та статус
+            y -= 10
+            c.setFont(self.font_name, 10)
+            c.drawString(30, y, f"Заявлена несправність: {issue}")
+            
+            y -= 20
+            c.drawString(30, y, f"Поточний статус: {status}")
+
+            y -= 15
+            c.line(30, y + 8, width - 30, y + 8)
+
+            # Правила та примітки
+            y -= 12
+            c.setFont(self.font_name, 7)
+            c.setFillColor(colors.HexColor("#555555"))
+            notes = (
+                "1. Видача обладнання здійснюється тільки при наявності даної квитанції.\n"
+                "2. Сервісний центр не несе відповідальності за можливу втрату даних на носіях інформації.\n"
+                "3. Обладнання з виконаним ремонтом зберігається безоплатно протягом 30 днів."
+            )
+            text_obj = c.beginText(30, y)
+            text_obj.setLeading(9)
+            for line in notes.split('\n'):
+                text_obj.textLine(line)
+            c.drawText(text_obj)
+
+            # Підписи
+            y_sig = 45
+            c.setFont(self.font_name, 9)
+            c.setFillColor(colors.black)
+            c.drawString(30, y_sig, "Замовник: ____________________ (підпис)")
+            c.drawRightString(width - 30, y_sig, "Прийняв: ____________________ (підпис)")
 
             c.save()
 
-            QMessageBox.information(self, "Успіх", f"Квитанцію сформовано:\n{pdf_filename}")
+            QMessageBox.information(self, "Успіх", f"Квитанцію А5 сформовано:\n{pdf_filename}")
 
             if sys.platform == "win32":
                 os.startfile(pdf_filename)
