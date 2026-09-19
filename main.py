@@ -117,8 +117,8 @@ class ServiceManagerApp(QMainWindow):
         self.date_in_edit.setCalendarPopup(True)
 
         self.date_out_edit = QDateEdit()
-        self.date_out_edit.setDate(QDate.currentDate())
         self.date_out_edit.setCalendarPopup(True)
+        self.date_out_edit.clear()  # Порожньо за замовчуванням
 
         self.status_box = QComboBox()
         self.status_box.addItems(["В роботі", "Очікує запчастин", "Готово", "Видано"])
@@ -171,7 +171,13 @@ class ServiceManagerApp(QMainWindow):
         client = self.client_input.text().strip()
         phone = self.phone_input.text().strip()
         date_in = self.date_in_edit.date().toString("yyyy-MM-dd")
-        date_out = self.date_out_edit.date().toString("yyyy-MM-dd")
+        
+        # Перевіряємо, чи вказав користувач дату видачі
+        if self.date_out_edit.text().strip():
+            date_out = self.date_out_edit.date().toString("yyyy-MM-dd")
+        else:
+            date_out = ""
+
         item = self.item_input.text().strip()
         serial = self.serial_input.text().strip()
         equipment = self.equipment_input.text().strip()
@@ -179,7 +185,7 @@ class ServiceManagerApp(QMainWindow):
         status = self.status_box.currentText()
 
         if not client or not item:
-            QMessageBox.warning(self, "Помилка", "Заповніть обов'язкові поля!")
+            QMessageBox.warning(self, "Помилка", "Заповніть обов'язкові поля (Клієнт та Товар)!")
             return
 
         self.cursor.execute("""
@@ -206,6 +212,19 @@ class ServiceManagerApp(QMainWindow):
         if selected_row >= 0:
             self.client_input.setText(self.table.item(selected_row, 1).text())
             self.phone_input.setText(self.table.item(selected_row, 2).text())
+            
+            # Дата прийому
+            date_in_str = self.table.item(selected_row, 3).text()
+            if date_in_str:
+                self.date_in_edit.setDate(QDate.fromString(date_in_str, "yyyy-MM-dd"))
+            
+            # Дата видачі
+            date_out_str = self.table.item(selected_row, 4).text()
+            if date_out_str:
+                self.date_out_edit.setDate(QDate.fromString(date_out_str, "yyyy-MM-dd"))
+            else:
+                self.date_out_edit.clear()
+
             self.item_input.setText(self.table.item(selected_row, 5).text())
             self.serial_input.setText(self.table.item(selected_row, 6).text())
             self.equipment_input.setText(self.table.item(selected_row, 7).text())
@@ -218,6 +237,8 @@ class ServiceManagerApp(QMainWindow):
         self.serial_input.clear()
         self.equipment_input.clear()
         self.issue_input.clear()
+        self.date_in_edit.setDate(QDate.currentDate())
+        self.date_out_edit.clear()
 
     def delete_order(self):
         selected_row = self.table.currentRow()
@@ -234,7 +255,7 @@ class ServiceManagerApp(QMainWindow):
     def print_receipt(self):
         selected_row = self.table.currentRow()
         if selected_row == -1:
-            QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення з таблиці!")
+            QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення зі списку таблиці!")
             return
 
         try:
@@ -249,7 +270,6 @@ class ServiceManagerApp(QMainWindow):
             issue = self.table.item(selected_row, 8).text()
             status = self.table.item(selected_row, 9).text()
 
-            # Зберігаємо PDF у папку Документи користувача
             docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
             pdf_filename = os.path.join(docs_dir, f"Квитанция_Заказ_{order_id}.pdf")
             
@@ -258,7 +278,8 @@ class ServiceManagerApp(QMainWindow):
             c.drawString(100, 750, f"АКТ-КВИТАНЦІЯ РЕМОНТУ № {order_id}")
             
             c.setFont(self.font_name, 11)
-            c.drawString(100, 710, f"Дата прийому: {date_in}   |   Планова дата видачі: {date_out}")
+            date_out_display = date_out if date_out else "Не вказано"
+            c.drawString(100, 710, f"Дата прийому: {date_in}   |   Планова дата видачі: {date_out_display}")
             c.drawString(100, 685, f"Клієнт: {client}")
             c.drawString(100, 665, f"Телефон: {phone}")
             c.drawString(100, 640, f"Товар / Модель: {item}")
@@ -279,33 +300,6 @@ class ServiceManagerApp(QMainWindow):
                 os.startfile(pdf_filename)
         except Exception as e:
             QMessageBox.critical(self, "Помилка", f"Не вдалося створити квитанцію: {str(e)}")
-
-        pdf_filename = f"Квитанция_Заказ_{order_id}.pdf"
-        
-        c = canvas.Canvas(pdf_filename, pagesize=letter)
-        c.setFont(self.font_name, 16)
-        c.drawString(100, 750, f"АКТ-КВИТАНЦІЯ РЕМОНТУ № {order_id}")
-        
-        c.setFont(self.font_name, 11)
-        c.drawString(100, 710, f"Дата прийому: {date_in}   |   Планова дата видачі: {date_out}")
-        c.drawString(100, 685, f"Клієнт: {client}")
-        c.drawString(100, 665, f"Телефон: {phone}")
-        c.drawString(100, 640, f"Товар / Модель: {item}")
-        c.drawString(100, 620, f"Серійний номер: {serial}")
-        c.drawString(100, 600, f"Комплектація: {equipment}")
-        c.drawString(100, 575, f"Опис несправності: {issue}")
-        c.drawString(100, 550, f"Поточний статус: {status}")
-
-        c.line(100, 520, 500, 520)
-        c.drawString(100, 480, "Підпис клієнта: __________________")
-        c.drawString(100, 450, "Підпис майстра: __________________")
-
-        c.save()
-
-        if sys.platform == "win32":
-            os.startfile(pdf_filename)
-        else:
-            QMessageBox.information(self, "Успіх", f"Квитанцію збережено в файл {pdf_filename}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
