@@ -41,8 +41,15 @@ class ServiceManagerApp(QMainWindow):
         self.init_db()
         self.init_ui()
 
-    def init_db(self):
-        self.conn = sqlite3.connect("service_orders.db")
+   def init_db(self):
+        # Автоматично створюємо папку для бази даних у AppData користувача
+        app_data_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'ServiceManager')
+        os.makedirs(app_data_dir, exist_ok=True)
+        
+        # Шлях до файлу бази даних
+        db_path = os.path.join(app_data_dir, "service_orders.db")
+        
+        self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS orders (
