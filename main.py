@@ -2,7 +2,7 @@ import sys
 import os
 import sqlite3
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox, QDialog
 )
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QColor
 
 from reportlab.lib.pagesizes import A5, landscape
 from reportlab.pdfgen import canvas
@@ -132,13 +132,11 @@ class TrashDialog(QDialog):
         issue = self.table.item(selected_row, 9).text()
         status = self.table.item(selected_row, 10).text()
 
-        # Повертаємо в основну таблицю
         self.cursor.execute("""
             INSERT INTO orders (id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (orig_id, client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status))
 
-        # Видаляємо з кошика
         self.cursor.execute("DELETE FROM deleted_orders WHERE original_id = ?", (orig_id,))
         self.conn.commit()
 
@@ -195,7 +193,6 @@ class ServiceManagerApp(QMainWindow):
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
         
-        # Таблиця активних замовлень
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,7 +209,6 @@ class ServiceManagerApp(QMainWindow):
             )
         """)
 
-        # Таблиця кошика видалених замовлень
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS deleted_orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -432,6 +428,37 @@ class ServiceManagerApp(QMainWindow):
             self.cursor.execute(query, (new_value, order_id))
             self.conn.commit()
 
+            # Оновлюємо підсвічування рядка в разі зміни дати прийому або статусу
+            if column in (4, 10):
+                self.apply_row_highlight(row)
+
+    def is_overdue(self, date_in_str, status_str):
+        """Перевіряє, чи замовлення прийняте більше двох тижнів (14 днів) тому і не закрите."""
+        if not date_in_str or status_str in ["Готово", "Видано"]:
+            return False
+
+        try:
+            date_in = datetime.strptime(date_in_str, "%Y-%m-%d").date()
+            today = datetime.now().date()
+            return (today - date_in).days > 14
+        except ValueError:
+            return False
+
+    def apply_row_highlight(self, row_idx):
+        """Підсвічує рядок світло-червоним кольором, якщо замовлення протерміноване (>14 днів)."""
+        date_in_item = self.table.item(row_idx, 4)
+        status_item = self.table.item(row_idx, 10)
+
+        date_in_str = date_in_item.text() if date_in_item else ""
+        status_str = status_item.text() if status_item else ""
+
+        highlight_color = QColor("#FFCDD2") if self.is_overdue(date_in_str, status_str) else QColor("#FFFFFF")
+
+        for col_idx in range(self.table.columnCount()):
+            item = self.table.item(row_idx, col_idx)
+            if item:
+                item.setBackground(highlight_color)
+
     def save_order(self):
         client = self.client_input.text().strip()
         phone = self.phone_input.text().strip()
@@ -475,6 +502,10 @@ class ServiceManagerApp(QMainWindow):
                 if col_idx == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
+            
+            # Застосовуємо підсвічування для кожного рядка
+            self.apply_row_highlight(row_idx)
+
         self.is_loading = False
 
     def search_orders(self):
@@ -499,6 +530,9 @@ class ServiceManagerApp(QMainWindow):
                 if col_idx == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
+
+            self.apply_row_highlight(row_idx)
+
         self.is_loading = False
 
     def fill_form_from_table(self):
@@ -562,19 +596,16 @@ class ServiceManagerApp(QMainWindow):
 
         order_id = self.table.item(selected_row, 0).text()
 
-        # Отримуємо дані про замовлення перед видаленням
         self.cursor.execute("SELECT id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale FROM orders WHERE id = ?", (order_id,))
         row = self.cursor.fetchone()
 
         if row:
             deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # Вставляємо дані в таблицю deleted_orders
             self.cursor.execute("""
                 INSERT INTO deleted_orders (original_id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale, deleted_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], deleted_at))
 
-            # Видаляємо з основної таблиці orders
             self.cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
             self.conn.commit()
 
@@ -618,7 +649,6 @@ class ServiceManagerApp(QMainWindow):
             c.setFillColor(colors.HexColor("#2C3E50"))
             c.rect(15, height - 55, width - 30, 40, fill=1, stroke=0)
 
-            # Малювання логотипу у плашці, якщо він існує
             text_x = 30
             if self.logo_path:
                 try:
