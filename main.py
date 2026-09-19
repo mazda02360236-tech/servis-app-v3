@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox
 )
 from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QPixmap
 
 from reportlab.lib.pagesizes import A5, landscape
 from reportlab.pdfgen import canvas
@@ -45,13 +46,23 @@ def setup_cyrillic_font():
 
     return 'Helvetica'
 
+def get_logo_path():
+    """Повертає шлях до файлу логотипу, якщо він існує."""
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    for ext in ['logo.png', 'logo.jpg', 'logo.jpeg']:
+        path = os.path.join(base_path, ext)
+        if os.path.exists(path):
+            return path
+    return None
+
 class ServiceManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Облік ремонту інструменту та обладнання")
-        self.setGeometry(100, 100, 1180, 720)
+        self.setWindowTitle("Облік ремонту інструменту та обладнання — БЕНЗО ІНСТРУМЕНТ")
+        self.setGeometry(100, 100, 1180, 750)
         
         self.font_name = setup_cyrillic_font()
+        self.logo_path = get_logo_path()
         self.init_db()
         self.init_ui()
 
@@ -91,6 +102,20 @@ class ServiceManagerApp(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
+        # Верхня панель з логотипом
+        header_layout = QHBoxLayout()
+        if self.logo_path:
+            logo_label = QLabel()
+            pixmap = QPixmap(self.logo_path)
+            logo_label.setPixmap(pixmap.scaledToHeight(45, Qt.TransformationMode.SmoothTransformation))
+            header_layout.addWidget(logo_label)
+
+        title_label = QLabel("БЕНЗО ІНСТРУМЕНТ — Сервісний Центр")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50;")
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        main_layout.addLayout(header_layout)
+
         form_layout = QVBoxLayout()
 
         r1 = QHBoxLayout()
@@ -120,15 +145,13 @@ class ServiceManagerApp(QMainWindow):
         form_layout.addLayout(r2)
 
         r3 = QHBoxLayout()
-        
-        # Чекбокс та поле дати продажу (можна вимикати)
         self.has_sale_date_checkbox = QCheckBox("Вказати дату продажу:")
         self.has_sale_date_checkbox.toggled.connect(self.toggle_sale_date)
         
         self.date_sale_edit = QDateEdit()
         self.date_sale_edit.setDate(QDate.currentDate())
         self.date_sale_edit.setCalendarPopup(True)
-        self.date_sale_edit.setEnabled(False) # За замовчуванням вимкнено (порожньо)
+        self.date_sale_edit.setEnabled(False)
 
         self.date_in_edit = QDateEdit()
         self.date_in_edit.setDate(QDate.currentDate())
@@ -329,7 +352,6 @@ class ServiceManagerApp(QMainWindow):
             issue = self.table.item(selected_row, 9).text()
             status = self.table.item(selected_row, 10).text()
 
-            # Якщо дати продажу немає, ставимо профіс "-"
             display_date_sale = date_sale if (date_sale and date_sale != "None") else "—"
 
             docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
@@ -338,7 +360,7 @@ class ServiceManagerApp(QMainWindow):
             c = canvas.Canvas(pdf_filename, pagesize=landscape(A5))
             width, height = landscape(A5)
 
-            # Зовнішня декоративна рамка
+            # Зовнішня рамка
             c.setStrokeColor(colors.HexColor("#2C3E50"))
             c.setLineWidth(1.5)
             c.rect(15, 15, width - 30, height - 30)
@@ -347,9 +369,18 @@ class ServiceManagerApp(QMainWindow):
             c.setFillColor(colors.HexColor("#2C3E50"))
             c.rect(15, height - 55, width - 30, 40, fill=1, stroke=0)
 
+            # Малювання логотипу у плашці, якщо він існує
+            text_x = 30
+            if self.logo_path:
+                try:
+                    c.drawImage(self.logo_path, 20, height - 50, width=90, height=30, preserveAspectRatio=True, mask='auto')
+                    text_x = 120
+                except Exception:
+                    pass
+
             c.setFillColor(colors.white)
-            c.setFont(self.font_name, 14)
-            c.drawString(30, height - 38, f"АКТ-КВИТАНЦІЯ ПРИЙОМУ В РЕМОНТ № {order_id}")
+            c.setFont(self.font_name, 13)
+            c.drawString(text_x, height - 38, f"АКТ-КВИТАНЦІЯ ПРИЙОМУ В РЕМОНТ № {order_id}")
             
             c.setFont(self.font_name, 9)
             c.drawRightString(width - 30, height - 38, f"Дата прийому: {date_in}")
