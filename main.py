@@ -48,7 +48,7 @@ class ServiceManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Облік ремонту інструменту та обладнання")
-        self.setGeometry(100, 100, 1100, 680)
+        self.setGeometry(100, 100, 1100, 720)
         
         self.font_name = setup_cyrillic_font()
         self.init_db()
@@ -117,7 +117,7 @@ class ServiceManagerApp(QMainWindow):
         self.date_in_edit.setDate(QDate.currentDate())
         self.date_in_edit.setCalendarPopup(True)
 
-        # Дата видачі (календар, за замовчуванням +3 місяці від сьогодні)
+        # Дата видачі (календар, за замовчуванням +3 місяці)
         self.date_out_edit = QDateEdit()
         self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
         self.date_out_edit.setCalendarPopup(True)
@@ -156,6 +156,17 @@ class ServiceManagerApp(QMainWindow):
         btn_layout.addWidget(print_btn)
         btn_layout.addWidget(delete_btn)
         main_layout.addLayout(btn_layout)
+
+        # Панель пошуку клієнта
+        search_layout = QHBoxLayout()
+        search_label = QLabel("🔍 Пошук (ПІБ або Телефон):")
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Введіть ім'я або номер телефону для фільтрації...")
+        self.search_input.textChanged.connect(self.search_orders)
+        
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(self.search_input)
+        main_layout.addLayout(search_layout)
 
         self.table = QTableWidget()
         self.table.setColumnCount(10)
@@ -203,18 +214,35 @@ class ServiceManagerApp(QMainWindow):
             for col_idx, value in enumerate(row_data):
                 self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(value if value else "")))
 
+    def search_orders(self):
+        query = self.search_input.text().strip()
+        self.table.setRowCount(0)
+        
+        if not query:
+            self.cursor.execute("SELECT * FROM orders")
+        else:
+            search_pattern = f"%{query}%"
+            self.cursor.execute("""
+                SELECT * FROM orders 
+                WHERE client_name LIKE ? OR phone LIKE ?
+            """, (search_pattern, search_pattern))
+            
+        rows = self.cursor.fetchall()
+        for row_idx, row_data in enumerate(rows):
+            self.table.insertRow(row_idx)
+            for col_idx, value in enumerate(row_data):
+                self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(value if value else "")))
+
     def fill_form_from_table(self):
         selected_row = self.table.currentRow()
         if selected_row >= 0:
             self.client_input.setText(self.table.item(selected_row, 1).text())
             self.phone_input.setText(self.table.item(selected_row, 2).text())
             
-            # Встановлюємо дату прийому
             date_in_str = self.table.item(selected_row, 3).text()
             if date_in_str:
                 self.date_in_edit.setDate(QDate.fromString(date_in_str, "yyyy-MM-dd"))
             
-            # Встановлюємо дату видачі
             date_out_str = self.table.item(selected_row, 4).text()
             if date_out_str:
                 self.date_out_edit.setDate(QDate.fromString(date_out_str, "yyyy-MM-dd"))
@@ -231,6 +259,7 @@ class ServiceManagerApp(QMainWindow):
         self.serial_input.clear()
         self.equipment_input.clear()
         self.issue_input.clear()
+        self.search_input.clear()
         self.date_in_edit.setDate(QDate.currentDate())
         self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
 
