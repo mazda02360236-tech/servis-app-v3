@@ -7,9 +7,9 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
-    QMessageBox, QHeaderView, QDateEdit, QComboBox
+    QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox
 )
-from PyQt6.QtCore import QDate
+from PyQt6.QtCore import QDate, Qt
 
 from reportlab.lib.pagesizes import A5, landscape
 from reportlab.pdfgen import canvas
@@ -49,7 +49,7 @@ class ServiceManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Облік ремонту інструменту та обладнання")
-        self.setGeometry(100, 100, 1150, 720)
+        self.setGeometry(100, 100, 1180, 720)
         
         self.font_name = setup_cyrillic_font()
         self.init_db()
@@ -79,7 +79,6 @@ class ServiceManagerApp(QMainWindow):
             )
         """)
         
-        # Перевіряємо чи є колонка date_sale для існуючих баз даних
         self.cursor.execute("PRAGMA table_info(orders)")
         columns = [column[1] for column in self.cursor.fetchall()]
         if 'date_sale' not in columns:
@@ -121,9 +120,15 @@ class ServiceManagerApp(QMainWindow):
         form_layout.addLayout(r2)
 
         r3 = QHBoxLayout()
+        
+        # Чекбокс та поле дати продажу (можна вимикати)
+        self.has_sale_date_checkbox = QCheckBox("Вказати дату продажу:")
+        self.has_sale_date_checkbox.toggled.connect(self.toggle_sale_date)
+        
         self.date_sale_edit = QDateEdit()
         self.date_sale_edit.setDate(QDate.currentDate())
         self.date_sale_edit.setCalendarPopup(True)
+        self.date_sale_edit.setEnabled(False) # За замовчуванням вимкнено (порожньо)
 
         self.date_in_edit = QDateEdit()
         self.date_in_edit.setDate(QDate.currentDate())
@@ -136,7 +141,7 @@ class ServiceManagerApp(QMainWindow):
         self.status_box = QComboBox()
         self.status_box.addItems(["В роботі", "Очікує запчастин", "Готово", "Видано"])
 
-        r3.addWidget(QLabel("Дата продажу:"))
+        r3.addWidget(self.has_sale_date_checkbox)
         r3.addWidget(self.date_sale_edit)
         r3.addWidget(QLabel("Дата прийому:"))
         r3.addWidget(self.date_in_edit)
@@ -192,10 +197,18 @@ class ServiceManagerApp(QMainWindow):
 
         self.load_orders()
 
+    def toggle_sale_date(self, checked):
+        self.date_sale_edit.setEnabled(checked)
+
     def save_order(self):
         client = self.client_input.text().strip()
         phone = self.phone_input.text().strip()
-        date_sale = self.date_sale_edit.date().toString("yyyy-MM-dd")
+        
+        if self.has_sale_date_checkbox.isChecked():
+            date_sale = self.date_sale_edit.date().toString("yyyy-MM-dd")
+        else:
+            date_sale = ""
+
         date_in = self.date_in_edit.date().toString("yyyy-MM-dd")
         date_out = self.date_out_edit.date().toString("yyyy-MM-dd")
         item = self.item_input.text().strip()
@@ -253,8 +266,11 @@ class ServiceManagerApp(QMainWindow):
             self.phone_input.setText(self.table.item(selected_row, 2).text())
             
             date_sale_str = self.table.item(selected_row, 3).text()
-            if date_sale_str:
+            if date_sale_str and date_sale_str != "None":
+                self.has_sale_date_checkbox.setChecked(True)
                 self.date_sale_edit.setDate(QDate.fromString(date_sale_str, "yyyy-MM-dd"))
+            else:
+                self.has_sale_date_checkbox.setChecked(False)
 
             date_in_str = self.table.item(selected_row, 4).text()
             if date_in_str:
@@ -277,6 +293,7 @@ class ServiceManagerApp(QMainWindow):
         self.equipment_input.clear()
         self.issue_input.clear()
         self.search_input.clear()
+        self.has_sale_date_checkbox.setChecked(False)
         self.date_sale_edit.setDate(QDate.currentDate())
         self.date_in_edit.setDate(QDate.currentDate())
         self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
@@ -311,6 +328,9 @@ class ServiceManagerApp(QMainWindow):
             equipment = self.table.item(selected_row, 8).text()
             issue = self.table.item(selected_row, 9).text()
             status = self.table.item(selected_row, 10).text()
+
+            # Якщо дати продажу немає, ставимо профіс "-"
+            display_date_sale = date_sale if (date_sale and date_sale != "None") else "—"
 
             docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
             pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
@@ -355,7 +375,7 @@ class ServiceManagerApp(QMainWindow):
 
             y -= 20
             c.drawString(30, y, f"Комплектація: {equipment}")
-            c.drawString(320, y, f"Дата продажу: {date_sale}")
+            c.drawString(320, y, f"Дата продажу: {display_date_sale}")
 
             y -= 20
             c.drawString(30, y, f"Поточний статус: {status}")
