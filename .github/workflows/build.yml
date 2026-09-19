@@ -1,0 +1,39 @@
+name: Створити установщик Windows
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install PyQt6 pyinstaller reportlab requests
+
+    - name: Build EXE with PyInstaller
+      run: |
+        pyinstaller --noconsole --onefile main.py
+
+    - name: Build Setup with Inno Setup
+      uses: sayyidhaydar/inno-setup-action@v1.0.0
+      with:
+        filepath: 'setup.iss'
+
+    - name: Upload Installer Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ServiceManager_Setup
+        path: installer_output/ServiceManager_Setup.exe
