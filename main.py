@@ -49,7 +49,7 @@ class ServiceManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Облік ремонту інструменту та обладнання")
-        self.setGeometry(100, 100, 1100, 720)
+        self.setGeometry(100, 100, 1150, 720)
         
         self.font_name = setup_cyrillic_font()
         self.init_db()
@@ -74,9 +74,17 @@ class ServiceManagerApp(QMainWindow):
                 serial_num TEXT,
                 equipment TEXT,
                 issue TEXT,
-                status TEXT
+                status TEXT,
+                date_sale TEXT
             )
         """)
+        
+        # Перевіряємо чи є колонка date_sale для існуючих баз даних
+        self.cursor.execute("PRAGMA table_info(orders)")
+        columns = [column[1] for column in self.cursor.fetchall()]
+        if 'date_sale' not in columns:
+            self.cursor.execute("ALTER TABLE orders ADD COLUMN date_sale TEXT")
+
         self.conn.commit()
 
     def init_ui(self):
@@ -113,6 +121,10 @@ class ServiceManagerApp(QMainWindow):
         form_layout.addLayout(r2)
 
         r3 = QHBoxLayout()
+        self.date_sale_edit = QDateEdit()
+        self.date_sale_edit.setDate(QDate.currentDate())
+        self.date_sale_edit.setCalendarPopup(True)
+
         self.date_in_edit = QDateEdit()
         self.date_in_edit.setDate(QDate.currentDate())
         self.date_in_edit.setCalendarPopup(True)
@@ -124,6 +136,8 @@ class ServiceManagerApp(QMainWindow):
         self.status_box = QComboBox()
         self.status_box.addItems(["В роботі", "Очікує запчастин", "Готово", "Видано"])
 
+        r3.addWidget(QLabel("Дата продажу:"))
+        r3.addWidget(self.date_sale_edit)
         r3.addWidget(QLabel("Дата прийому:"))
         r3.addWidget(self.date_in_edit)
         r3.addWidget(QLabel("Дата видачі:"))
@@ -167,9 +181,9 @@ class ServiceManagerApp(QMainWindow):
         main_layout.addLayout(search_layout)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(10)
+        self.table.setColumnCount(11)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Клієнт", "Телефон", "Дата прийому", "Дата видачі", 
+            "ID", "Клієнт", "Телефон", "Дата продажу", "Дата прийому", "Дата видачі", 
             "Товар", "Серійний №", "Комплектація", "Несправність", "Статус"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -181,6 +195,7 @@ class ServiceManagerApp(QMainWindow):
     def save_order(self):
         client = self.client_input.text().strip()
         phone = self.phone_input.text().strip()
+        date_sale = self.date_sale_edit.date().toString("yyyy-MM-dd")
         date_in = self.date_in_edit.date().toString("yyyy-MM-dd")
         date_out = self.date_out_edit.date().toString("yyyy-MM-dd")
         item = self.item_input.text().strip()
@@ -194,9 +209,9 @@ class ServiceManagerApp(QMainWindow):
             return
 
         self.cursor.execute("""
-            INSERT INTO orders (client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (client, phone, date_in, date_out, item, serial, equipment, issue, status))
+            INSERT INTO orders (client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (client, phone, date_in, date_out, item, serial, equipment, issue, status, date_sale))
         self.conn.commit()
 
         self.clear_fields()
@@ -205,7 +220,7 @@ class ServiceManagerApp(QMainWindow):
 
     def load_orders(self):
         self.table.setRowCount(0)
-        self.cursor.execute("SELECT * FROM orders")
+        self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders")
         rows = self.cursor.fetchall()
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
@@ -217,11 +232,11 @@ class ServiceManagerApp(QMainWindow):
         self.table.setRowCount(0)
         
         if not query:
-            self.cursor.execute("SELECT * FROM orders")
+            self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders")
         else:
             search_pattern = f"%{query}%"
             self.cursor.execute("""
-                SELECT * FROM orders 
+                SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders 
                 WHERE client_name LIKE ? OR phone LIKE ?
             """, (search_pattern, search_pattern))
             
@@ -237,18 +252,22 @@ class ServiceManagerApp(QMainWindow):
             self.client_input.setText(self.table.item(selected_row, 1).text())
             self.phone_input.setText(self.table.item(selected_row, 2).text())
             
-            date_in_str = self.table.item(selected_row, 3).text()
+            date_sale_str = self.table.item(selected_row, 3).text()
+            if date_sale_str:
+                self.date_sale_edit.setDate(QDate.fromString(date_sale_str, "yyyy-MM-dd"))
+
+            date_in_str = self.table.item(selected_row, 4).text()
             if date_in_str:
                 self.date_in_edit.setDate(QDate.fromString(date_in_str, "yyyy-MM-dd"))
             
-            date_out_str = self.table.item(selected_row, 4).text()
+            date_out_str = self.table.item(selected_row, 5).text()
             if date_out_str:
                 self.date_out_edit.setDate(QDate.fromString(date_out_str, "yyyy-MM-dd"))
 
-            self.item_input.setText(self.table.item(selected_row, 5).text())
-            self.serial_input.setText(self.table.item(selected_row, 6).text())
-            self.equipment_input.setText(self.table.item(selected_row, 7).text())
-            self.issue_input.setText(self.table.item(selected_row, 8).text())
+            self.item_input.setText(self.table.item(selected_row, 6).text())
+            self.serial_input.setText(self.table.item(selected_row, 7).text())
+            self.equipment_input.setText(self.table.item(selected_row, 8).text())
+            self.issue_input.setText(self.table.item(selected_row, 9).text())
 
     def clear_fields(self):
         self.client_input.clear()
@@ -258,6 +277,7 @@ class ServiceManagerApp(QMainWindow):
         self.equipment_input.clear()
         self.issue_input.clear()
         self.search_input.clear()
+        self.date_sale_edit.setDate(QDate.currentDate())
         self.date_in_edit.setDate(QDate.currentDate())
         self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
 
@@ -283,18 +303,18 @@ class ServiceManagerApp(QMainWindow):
             order_id = self.table.item(selected_row, 0).text()
             client = self.table.item(selected_row, 1).text()
             phone = self.table.item(selected_row, 2).text()
-            date_in = self.table.item(selected_row, 3).text()
-            date_out = self.table.item(selected_row, 4).text()
-            item = self.table.item(selected_row, 5).text()
-            serial = self.table.item(selected_row, 6).text()
-            equipment = self.table.item(selected_row, 7).text()
-            issue = self.table.item(selected_row, 8).text()
-            status = self.table.item(selected_row, 9).text()
+            date_sale = self.table.item(selected_row, 3).text()
+            date_in = self.table.item(selected_row, 4).text()
+            date_out = self.table.item(selected_row, 5).text()
+            item = self.table.item(selected_row, 6).text()
+            serial = self.table.item(selected_row, 7).text()
+            equipment = self.table.item(selected_row, 8).text()
+            issue = self.table.item(selected_row, 9).text()
+            status = self.table.item(selected_row, 10).text()
 
             docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
             pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
             
-            # Створення документа у форматі А5 Альбомний (595 x 420 pt)
             c = canvas.Canvas(pdf_filename, pagesize=landscape(A5))
             width, height = landscape(A5)
 
@@ -303,7 +323,7 @@ class ServiceManagerApp(QMainWindow):
             c.setLineWidth(1.5)
             c.rect(15, 15, width - 30, height - 30)
 
-            # Верхній заголовок (Верхня плашка)
+            # Верхня плашка заголовка
             c.setFillColor(colors.HexColor("#2C3E50"))
             c.rect(15, height - 55, width - 30, 40, fill=1, stroke=0)
 
@@ -318,7 +338,6 @@ class ServiceManagerApp(QMainWindow):
             c.setFillColor(colors.black)
             y = height - 75
 
-            # Лінія сітки
             c.setLineWidth(0.5)
             c.setStrokeColor(colors.HexColor("#BDC3C7"))
 
@@ -329,25 +348,26 @@ class ServiceManagerApp(QMainWindow):
             y -= 20
             c.line(30, y + 12, width - 30, y + 12)
 
-            # Блок 2: Інформація про обладнання
+            # Блок 2: Інформація про обладнання та дати
             c.setFont(self.font_name, 10)
             c.drawString(30, y, f"Обладнання / Товар: {item}")
             c.drawString(320, y, f"Серійний №: {serial}")
 
             y -= 20
             c.drawString(30, y, f"Комплектація: {equipment}")
+            c.drawString(320, y, f"Дата продажу: {date_sale}")
+
+            y -= 20
+            c.drawString(30, y, f"Поточний статус: {status}")
             c.drawString(320, y, f"Планова дата видачі: {date_out}")
 
             y -= 15
             c.line(30, y + 8, width - 30, y + 8)
 
-            # Блок 3: Несправність та статус
+            # Блок 3: Несправність
             y -= 10
             c.setFont(self.font_name, 10)
             c.drawString(30, y, f"Заявлена несправність: {issue}")
-            
-            y -= 20
-            c.drawString(30, y, f"Поточний статус: {status}")
 
             y -= 15
             c.line(30, y + 8, width - 30, y + 8)
@@ -368,7 +388,7 @@ class ServiceManagerApp(QMainWindow):
             c.drawText(text_obj)
 
             # Підписи
-            y_sig = 45
+            y_sig = 40
             c.setFont(self.font_name, 9)
             c.setFillColor(colors.black)
             c.drawString(30, y_sig, "Замовник: ____________________ (підпис)")
