@@ -14,12 +14,13 @@ from PyQt6.QtGui import QPixmap, QColor
 
 class StatusDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
-        # Если строка выделена, используем стандартное выделение PyQt
+        # Если строка выделена — отображаем стандартный цвет выделения всей строки
         if option.state & QStyle.StateFlag.State_Selected:
+            option.backgroundBrush = QColor("#007bff")
             super().paint(painter, option, index)
             return
 
-        # Задаем цвета фонов только для невыделенных строк
+        # Иначе красим статус в его цвет
         status = index.data()
         if status == "В роботі":
             option.backgroundBrush = QColor("#d4edda")
@@ -84,7 +85,7 @@ class ServiceApp(QMainWindow):
         self.selected_photo_path = None
         
         self.btn_add = QPushButton("Зберегти замовлення")
-        self.btn_add.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
+        self.btn_add.setStyleSheet("background-color: #28a745; color: white; font-weight: bold; padding: 6px;")
         self.btn_add.clicked.connect(self.save_order)
         left_layout.addWidget(self.btn_add)
         
@@ -114,22 +115,27 @@ class ServiceApp(QMainWindow):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        # 1. Включаем выделение ВСЕЙ строки
+        # Включаем подсвечивание всей строки от левого до правого края
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         
-        # Явный стиль выделения через QSS (чтобы точно было видно синюю строку)
+        # Принудительный стиль синей подсветки выделенной строки
         self.table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #d6d6d6;
+                selection-background-color: #007bff;
+                selection-color: #ffffff;
+            }
             QTableWidget::item:selected {
-                background-color: #007bff;
-                color: white;
+                background-color: #007bff !important;
+                color: #ffffff !important;
             }
         """)
         
-        # Делегат для статуса (колонка 6)
+        # Делегат статуса
         self.table.setItemDelegateForColumn(6, StatusDelegate(self.table))
         
-        # Клик по ячейке для просмотра/удаления фото
+        # Обработка клика по ячейкам
         self.table.cellClicked.connect(self.on_cell_clicked)
         
         right_layout.addWidget(self.table)
@@ -233,15 +239,19 @@ class ServiceApp(QMainWindow):
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             
+            # Заполняем текстовые колонки
             for col_idx in range(7):
                 item = QTableWidgetItem(str(row_data[col_idx]))
-                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                # Корректная установка флагов: делаем ячейку выделяемой, но не редактируемой
+                flags = (item.flags() & ~Qt.ItemFlag.ItemIsEditable) | Qt.ItemFlag.ItemIsSelectable
+                item.setFlags(flags)
                 self.table.setItem(row_idx, col_idx, item)
             
-            # Колонка "Фото"
+            # Колонка "Фото" (индекс 7)
             photo_path = row_data[7]
             photo_item = QTableWidgetItem()
-            photo_item.setFlags(photo_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+            flags = (photo_item.flags() & ~Qt.ItemFlag.ItemIsEditable) | Qt.ItemFlag.ItemIsSelectable
+            photo_item.setFlags(flags)
             
             if photo_path and os.path.exists(photo_path):
                 photo_item.setText("📷 Перегляд")
@@ -252,35 +262,51 @@ class ServiceApp(QMainWindow):
                 
             self.table.setItem(row_idx, 7, photo_item)
 
-    # Клики по ячейкам
     def on_cell_clicked(self, row, column):
-        if column != 7: # Колонка с фото
+        # Просмотр фото срабатывает только при клике на 7-ю колонку ("Фото")
+        if column != 7:
             return
             
         item = self.table.item(row, column)
+        if not item:
+            return
+            
         photo_path = item.data(Qt.ItemDataRole.UserRole)
         
-        if not photo_path or not os.path.exists(photo_path):
-            return
-
-        order_id = self.table.item(row, 0).text()
-        self.show_photo_dialog(order_id, photo_path, row)
+        if photo_path and os.path.exists(photo_path):
+            order_id = self.table.item(row, 0).text()
+            self.show_photo_dialog(order_id, photo_path, row)
 
     def show_photo_dialog(self, order_id, photo_path, row):
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"Фото замовлення №{order_id}")
+        dialog.setWindowTitle(f"Перегляд фото — Замовлення №{order_id}")
+        dialog.setMinimumSize(500, 500)
         layout = QVBoxLayout(dialog)
 
+        # Просмотр фото
         label = QLabel()
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pixmap = QPixmap(photo_path)
         if not pixmap.isNull():
-            label.setPixmap(pixmap.scaled(600, 600, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            label.setPixmap(pixmap.scaled(580, 580, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         else:
             label.setText("Помилка завантаження зображення")
         layout.addWidget(label)
 
+        # Кнопка удаления фото
         btn_delete = QPushButton("🗑️ Видалити фото")
-        btn_delete.setStyleSheet("background-color: #dc3545; color: white; font-weight: bold; padding: 8px;")
+        btn_delete.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545; 
+                color: white; 
+                font-weight: bold; 
+                padding: 10px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #bd2130;
+            }
+        """)
         layout.addWidget(btn_delete)
 
         def delete_photo():
@@ -291,26 +317,26 @@ class ServiceApp(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
-                # Удаление файла с диска
+                # 1. Удаление файла с диска
                 try:
                     if os.path.exists(photo_path):
                         os.remove(photo_path)
                 except Exception as e:
                     QMessageBox.warning(dialog, "Помилка", f"Не вдалося видалити файл: {e}")
 
-                # Обновление в БД
+                # 2. Обновление записи в БД
                 conn = sqlite3.connect(self.db_name)
                 cursor = conn.cursor()
                 cursor.execute("UPDATE orders SET photo_path = '' WHERE id = ?", (order_id,))
                 conn.commit()
                 conn.close()
 
-                # Обновление ячейки в таблице
+                # 3. Обновление ячейки в таблице
                 item = self.table.item(row, 7)
                 item.setText("—")
                 item.setData(Qt.ItemDataRole.UserRole, None)
 
-                QMessageBox.information(dialog, "Успіх", "Фото успішно видалено!")
+                QMessageBox.information(dialog, "Успіх", "Фотографію успішно видалено!")
                 dialog.accept()
 
         btn_delete.clicked.connect(delete_photo)
