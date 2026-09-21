@@ -20,15 +20,17 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib import colors
 
-# --- ВИЗНАЧЕННЯ БАЗОВОЇ ПАПКИ ТА UPLOAD_DIR ---
+# --- ВИЗНАЧЕННЯ БАЗОВОЇ ПАПКИ ТА UPLOAD_DIR В APPDATA ---
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+APP_DATA_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'ServiceManager')
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+
+UPLOAD_DIR = os.path.join(APP_DATA_DIR, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 PYTHON_DATE_FORMAT = "%d.%m.%Y"
 
@@ -278,10 +280,7 @@ class ServiceManagerApp(QMainWindow):
         self.init_ui()
 
     def init_db(self):
-        app_data_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'ServiceManager')
-        os.makedirs(app_data_dir, exist_ok=True)
-        
-        db_path = os.path.join(app_data_dir, "service_orders.db")
+        db_path = os.path.join(APP_DATA_DIR, "service_orders.db")
         
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
@@ -488,13 +487,11 @@ class ServiceManagerApp(QMainWindow):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        # Делегати вибору дати
         date_delegate = DateDelegate(self.table)
         self.table.setItemDelegateForColumn(3, date_delegate)
         self.table.setItemDelegateForColumn(4, date_delegate)
         self.table.setItemDelegateForColumn(5, date_delegate)
 
-        # Стиль підсвічування виділеного рядка (Світло-зелений)
         self.table.setStyleSheet("""
             QTableWidget::item:selected {
                 background-color: #D4EDDA;
@@ -510,19 +507,16 @@ class ServiceManagerApp(QMainWindow):
         self.load_orders()
 
     def on_row_selected(self):
-        """Обробка виділення рядка в таблиці"""
         if self.is_loading:
             return
         self.refresh_all_highlights()
         self.fill_form_from_table()
 
     def refresh_all_highlights(self):
-        """Оновлення кольору підсвічування для всіх рядків"""
         for r in range(self.table.rowCount()):
             self.apply_row_highlight(r)
 
     def select_photos(self):
-        """Безпечне додавання фото з підтримкою будь-яких розширень файлів"""
         selected_row = self.table.currentRow()
         if selected_row == -1:
             QMessageBox.warning(self, "Увага", "Спочатку оберіть замовлення в таблиці!")
@@ -554,7 +548,7 @@ class ServiceManagerApp(QMainWindow):
                         new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
                         dest_path = os.path.join(UPLOAD_DIR, new_filename)
                         
-                        shutil.copy(photo_path, dest_path)
+                        shutil.copy2(photo_path, dest_path)
                         
                         self.cursor.execute("""
                             INSERT INTO order_photos (order_id, photo_path)
@@ -607,7 +601,6 @@ class ServiceManagerApp(QMainWindow):
         self.date_sale_edit.setEnabled(checked)
 
     def quick_order(self):
-        """Створення швидкого замовлення з автоматичною очисткою та виділенням"""
         self.clear_fields()
 
         today = QDate.currentDate().toString("dd.MM.yyyy")
@@ -621,7 +614,6 @@ class ServiceManagerApp(QMainWindow):
 
         self.load_orders()
         
-        # Виділяємо новий рядок (він перший зверху)
         if self.table.rowCount() > 0:
             self.table.selectRow(0)
 
@@ -669,15 +661,14 @@ class ServiceManagerApp(QMainWindow):
             return False
 
     def apply_row_highlight(self, row_idx):
-        """Підсвічування рядків: обраний -> світло-зелений (#D4EDDA), протермінований -> світло-червоний (#FFCDD2)"""
         is_selected = (self.table.currentRow() == row_idx)
         date_in_str = self.get_cell_text(row_idx, 4)
         status_str = self.get_cell_text(row_idx, 10)
 
         if is_selected:
-            bg_color = QColor("#D4EDDA")  # Світло-зелений колір для обраного замовлення
+            bg_color = QColor("#D4EDDA")
         elif self.is_overdue(date_in_str, status_str):
-            bg_color = QColor("#FFCDD2")  # Світло-червоний для протермінованого
+            bg_color = QColor("#FFCDD2")
         else:
             bg_color = QColor("#FFFFFF")
 
@@ -720,7 +711,7 @@ class ServiceManagerApp(QMainWindow):
                     ext = os.path.splitext(photo_path)[1]
                     new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
                     dest_path = os.path.join(UPLOAD_DIR, new_filename)
-                    shutil.copy(photo_path, dest_path)
+                    shutil.copy2(photo_path, dest_path)
                     self.cursor.execute("""
                         INSERT INTO order_photos (order_id, photo_path)
                         VALUES (?, ?)
@@ -847,7 +838,6 @@ class ServiceManagerApp(QMainWindow):
         if idx >= 0:
             self.status_box.setCurrentIndex(idx)
 
-        # Оновлюємо відображення лічильника фотографій для вибраного рядка
         order_id = self.get_cell_text(selected_row, 0)
         if order_id:
             try:
@@ -900,7 +890,6 @@ class ServiceManagerApp(QMainWindow):
             QMessageBox.information(self, "Кошик", f"Замовлення №{order_id} переміщено в кошик.")
 
     def print_receipt(self):
-        """Макет квитанції на пів аркуша А4 (у верхній частині книжкового А4)"""
         selected_row = self.table.currentRow()
         if selected_row == -1:
             QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення зі списку таблиці!")
