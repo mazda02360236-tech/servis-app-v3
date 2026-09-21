@@ -2,40 +2,35 @@ import sys
 import os
 import sqlite3
 import shutil
-import urllib.request
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
-    QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox,
-    QDialog, QFileDialog, QScrollArea, QStyledItemDelegate,
-    QAbstractItemView
+    QMessageBox, QHeaderView, QComboBox, QDialog, QFileDialog, 
+    QStyledItemDelegate, QAbstractItemView, QStyle
 )
-from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QColor
-from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib import colors
 
 class StatusDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
+        # Если строка выделена, используем стандартное выделение PyQt
+        if option.state & QStyle.StateFlag.State_Selected:
+            super().paint(painter, option, index)
+            return
+
+        # Задаем цвета фонов только для невыделенных строк
         status = index.data()
         if status == "В роботі":
             option.backgroundBrush = QColor("#d4edda")
-            option.palette.setColor(option.palette.ColorRole.Text, QColor("#155724"))
         elif status == "Готово":
             option.backgroundBrush = QColor("#cce5ff")
-            option.palette.setColor(option.palette.ColorRole.Text, QColor("#004085"))
         elif status == "Видано":
             option.backgroundBrush = QColor("#e2e3e5")
-            option.palette.setColor(option.palette.ColorRole.Text, QColor("#383d41"))
         elif status == "Очікує запчастини":
             option.backgroundBrush = QColor("#fff3cd")
-            option.palette.setColor(option.palette.ColorRole.Text, QColor("#856404"))
         elif status == "Відмова":
             option.backgroundBrush = QColor("#f8d7da")
-            option.palette.setColor(option.palette.ColorRole.Text, QColor("#721c24"))
         
         super().paint(painter, option, index)
 
@@ -52,7 +47,7 @@ class ServiceApp(QMainWindow):
         self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget)
         
-        # --- ЛІВА ПАНЕЛЬ (ФОРМА ВВОДУ) ---
+        # --- ЛЕВАЯ ПАНЕЛЬ ---
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         left_panel.setFixedWidth(320)
@@ -99,11 +94,10 @@ class ServiceApp(QMainWindow):
         
         left_layout.addStretch()
         
-        # --- ПРАВА ПАНЕЛЬ (ТАБЛИЦЯ ТА ФІЛЬТРИ) ---
+        # --- ПРАВАЯ ПАНЕЛЬ ---
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         
-        # Пошук та фільтри
         filter_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Пошук за квитанцією, ПІБ, телефоном або пристроєм...")
@@ -112,7 +106,7 @@ class ServiceApp(QMainWindow):
         
         right_layout.addLayout(filter_layout)
         
-        # Таблиця замовлень
+        # Таблица заказов
         self.table = QTableWidget()
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels([
@@ -120,11 +114,22 @@ class ServiceApp(QMainWindow):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        # 1. Підсвічування всього замовлення (рядка) при виборі будь-якої комірки
+        # 1. Включаем выделение ВСЕЙ строки
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         
-        # Клік по комірці для перегляду/видалення фото
+        # Явный стиль выделения через QSS (чтобы точно было видно синюю строку)
+        self.table.setStyleSheet("""
+            QTableWidget::item:selected {
+                background-color: #007bff;
+                color: white;
+            }
+        """)
+        
+        # Делегат для статуса (колонка 6)
+        self.table.setItemDelegateForColumn(6, StatusDelegate(self.table))
+        
+        # Клик по ячейке для просмотра/удаления фото
         self.table.cellClicked.connect(self.on_cell_clicked)
         
         right_layout.addWidget(self.table)
@@ -173,7 +178,6 @@ class ServiceApp(QMainWindow):
             
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         
-        # Збереження фото
         saved_photo_path = ""
         if self.selected_photo_path:
             if not os.path.exists("photos"):
@@ -228,20 +232,19 @@ class ServiceApp(QMainWindow):
         self.table.setRowCount(0)
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
-            # Заповнення основних даних
+            
             for col_idx in range(7):
                 item = QTableWidgetItem(str(row_data[col_idx]))
                 item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
             
-            # Заповнення комірки "Фото"
+            # Колонка "Фото"
             photo_path = row_data[7]
             photo_item = QTableWidgetItem()
             photo_item.setFlags(photo_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
             
             if photo_path and os.path.exists(photo_path):
                 photo_item.setText("📷 Перегляд")
-                photo_item.setForeground(QColor("#007bff"))
                 photo_item.setData(Qt.ItemDataRole.UserRole, photo_path)
             else:
                 photo_item.setText("—")
@@ -249,9 +252,9 @@ class ServiceApp(QMainWindow):
                 
             self.table.setItem(row_idx, 7, photo_item)
 
-    # 2. Обробка кліку по комірці для перегляду та видалення фото
+    # Клики по ячейкам
     def on_cell_clicked(self, row, column):
-        if column != 7:  # Колонка "Фото" має індекс 7
+        if column != 7: # Колонка с фото
             return
             
         item = self.table.item(row, column)
@@ -268,7 +271,6 @@ class ServiceApp(QMainWindow):
         dialog.setWindowTitle(f"Фото замовлення №{order_id}")
         layout = QVBoxLayout(dialog)
 
-        # Відображення зображення
         label = QLabel()
         pixmap = QPixmap(photo_path)
         if not pixmap.isNull():
@@ -277,7 +279,6 @@ class ServiceApp(QMainWindow):
             label.setText("Помилка завантаження зображення")
         layout.addWidget(label)
 
-        # Кнопка видалення фото
         btn_delete = QPushButton("🗑️ Видалити фото")
         btn_delete.setStyleSheet("background-color: #dc3545; color: white; font-weight: bold; padding: 8px;")
         layout.addWidget(btn_delete)
@@ -290,21 +291,21 @@ class ServiceApp(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
-                # 1. Видалення з диска
+                # Удаление файла с диска
                 try:
                     if os.path.exists(photo_path):
                         os.remove(photo_path)
                 except Exception as e:
                     QMessageBox.warning(dialog, "Помилка", f"Не вдалося видалити файл: {e}")
 
-                # 2. Оновлення бази даних
+                # Обновление в БД
                 conn = sqlite3.connect(self.db_name)
                 cursor = conn.cursor()
                 cursor.execute("UPDATE orders SET photo_path = '' WHERE id = ?", (order_id,))
                 conn.commit()
                 conn.close()
 
-                # 3. Оновлення таблиці
+                # Обновление ячейки в таблице
                 item = self.table.item(row, 7)
                 item.setText("—")
                 item.setData(Qt.ItemDataRole.UserRole, None)
