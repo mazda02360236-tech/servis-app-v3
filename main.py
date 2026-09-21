@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QFileDialog, QScrollArea, QStyledItemDelegate
 )
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QPixmap, QColor
+from PyQt6.QtGui import QPixmap
 
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -210,7 +210,6 @@ class TrashDialog(QDialog):
             "ID", "Клієнт", "Телефон", "Дата продажу", "Дата прийому", "Дата видачі", 
             "Товар", "Серійний №", "Комплектація", "Несправність", "Статус", "Дата видалення"
         ])
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
 
@@ -530,10 +529,6 @@ class ServiceManagerApp(QMainWindow):
             "ID", "Клієнт", "Телефон", "Дата продажу", "Дата прийому", "Дата видачі", 
             "Товар", "Серійний №", "Комплектація", "Несправність", "Статус", "Фото"
         ])
-        
-        # --- НАЛАШТУВАННЯ ВИДІЛЕННЯ ЦІЛОГО РЯДКА ---
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
         date_delegate = DateDelegate(self.table)
@@ -721,17 +716,22 @@ class ServiceManagerApp(QMainWindow):
             return False
 
     def apply_row_highlight(self, row_idx):
+        is_selected = (self.table.currentRow() == row_idx)
         date_in_str = self.get_cell_text(row_idx, 4)
         status_str = self.get_cell_text(row_idx, 10)
-        overdue = self.is_overdue(date_in_str, status_str)
 
+        if is_selected:
+            bg_color = Qt.GlobalColor.white  # Можна налаштувати за бажанням
+        elif self.is_overdue(date_in_str, status_str):
+            bg_color = Qt.GlobalColor.red
+        else:
+            bg_color = Qt.GlobalColor.white
+
+        # Просте оформлення виділення рядка
         for col_idx in range(self.table.columnCount()):
             item = self.table.item(row_idx, col_idx)
-            if item:
-                if overdue:
-                    item.setBackground(QColor("#FADBD8"))  # Ніжно-червоний колір для прострочених
-                else:
-                    item.setBackground(QColor("white"))
+            if item and self.is_overdue(date_in_str, status_str) and not is_selected:
+                item.setBackground(Qt.GlobalColor.lightGray)
 
     def save_order(self):
         client = self.client_input.text().strip()
