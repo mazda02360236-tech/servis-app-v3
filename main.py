@@ -12,9 +12,9 @@ from PyQt6.QtWidgets import (
     QFileDialog, QScrollArea, QStyledItemDelegate
 )
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QPixmap, QColor
+from PyQt6.QtGui import QPixmap, QColor, QBrush
 
-from reportlab.lib.pagesizes import A5, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -30,28 +30,25 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-DATE_FORMAT = "dd.MM.yyyy"
 PYTHON_DATE_FORMAT = "%d.%m.%Y"
 
 def format_date_to_ukr(date_str):
-    """Конвертує дату з форматів YYYY-MM-DD або інших у формат dd.MM.yyyy"""
+    """Конвертує дату у формат dd.MM.yyyy"""
     if not date_str or date_str == "None":
         return ""
     
-    # Якщо вже в потрібному форматі dd.MM.yyyy
-    d = QDate.fromString(date_str, "dd.MM.yyyy")
+    d = QDate.fromString(str(date_str), "dd.MM.yyyy")
     if d.isValid():
         return d.toString("dd.MM.yyyy")
     
-    # Якщо в форматі yyyy-MM-dd (з БД)
-    d = QDate.fromString(date_str, "yyyy-MM-dd")
+    d = QDate.fromString(str(date_str), "yyyy-MM-dd")
     if d.isValid():
         return d.toString("dd.MM.yyyy")
         
-    return date_str
+    return str(date_str)
 
 def setup_cyrillic_font():
-    """Використовує системний шрифт Arial для коректного відображення кирилиці в PDF."""
+    """Системний шрифт для кирилиці в PDF"""
     win_font_path = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf')
     
     if os.path.exists(win_font_path):
@@ -79,7 +76,6 @@ def setup_cyrillic_font():
     return 'Helvetica'
 
 def get_logo_path():
-    """Повертає шлях до файлу логотипу, якщо він існує."""
     base_path = BASE_DIR
     for ext in ['logo.png', 'logo.jpg', 'logo.jpeg']:
         path = os.path.join(base_path, ext)
@@ -89,7 +85,7 @@ def get_logo_path():
 
 
 class DateDelegate(QStyledItemDelegate):
-    """Делегат для вибору дати через календар безпосередньо в комірці таблиці"""
+    """Делегат для вибору дати з календаря в таблиці"""
     def createEditor(self, parent, option, index):
         editor = QDateEdit(parent)
         editor.setDisplayFormat("dd.MM.yyyy")
@@ -98,9 +94,9 @@ class DateDelegate(QStyledItemDelegate):
 
     def setEditorData(self, editor, index):
         value = index.model().data(index, Qt.ItemDataRole.EditRole) or ""
-        d = QDate.fromString(value, "dd.MM.yyyy")
+        d = QDate.fromString(str(value), "dd.MM.yyyy")
         if not d.isValid():
-            d = QDate.fromString(value, "yyyy-MM-dd")
+            d = QDate.fromString(str(value), "yyyy-MM-dd")
         if not d.isValid():
             d = QDate.currentDate()
         editor.setDate(d)
@@ -111,7 +107,7 @@ class DateDelegate(QStyledItemDelegate):
 
 
 class PhotoViewerDialog(QDialog):
-    """Вікно перегляду доданих фотографій"""
+    """Перегляд доданих фотографій"""
     def __init__(self, photo_paths, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🖼️ Прикріплені фотографії")
@@ -145,7 +141,7 @@ class PhotoViewerDialog(QDialog):
 
 
 class TrashDialog(QDialog):
-    """Вікно кошика видалених замовлень"""
+    """Кошик видалених замовлень"""
     def __init__(self, conn, parent=None):
         super().__init__(parent)
         self.conn = conn
@@ -158,8 +154,7 @@ class TrashDialog(QDialog):
         layout = QVBoxLayout(self)
 
         top_layout = QHBoxLayout()
-        info_label = QLabel("Список видалених замовлень:")
-        top_layout.addWidget(info_label)
+        top_layout.addWidget(QLabel("Список видалених замовлень:"))
         top_layout.addStretch()
         layout.addLayout(top_layout)
 
@@ -199,7 +194,7 @@ class TrashDialog(QDialog):
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             for col_idx, value in enumerate(row_data):
-                val_str = str(value if value else "")
+                val_str = str(value if value is not None else "")
                 if col_idx in (3, 4, 5):
                     val_str = format_date_to_ukr(val_str)
                 item = QTableWidgetItem(val_str)
@@ -493,52 +488,82 @@ class ServiceManagerApp(QMainWindow):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        # Встановлення делегатів вибору дати для колонок дат (3, 4, 5)
+        # Делегати вибору дати
         date_delegate = DateDelegate(self.table)
         self.table.setItemDelegateForColumn(3, date_delegate)
         self.table.setItemDelegateForColumn(4, date_delegate)
         self.table.setItemDelegateForColumn(5, date_delegate)
 
-        self.table.itemSelectionChanged.connect(self.fill_form_from_table)
+        # Стиль підсвічування виділеного рядка (Світло-зелений)
+        self.table.setStyleSheet("""
+            QTableWidget::item:selected {
+                background-color: #D4EDDA;
+                color: #155724;
+                font-weight: bold;
+            }
+        """)
+
+        self.table.itemSelectionChanged.connect(self.on_row_selected)
         self.table.cellChanged.connect(self.auto_save_cell)
         main_layout.addWidget(self.table)
 
         self.load_orders()
 
+    def on_row_selected(self):
+        """Обробка виділення рядка в таблиці"""
+        if self.is_loading:
+            return
+        self.refresh_all_highlights()
+        self.fill_form_from_table()
+
+    def refresh_all_highlights(self):
+        """Оновлення кольору підсвічування для всіх рядків"""
+        for r in range(self.table.rowCount()):
+            self.apply_row_highlight(r)
+
     def select_photos(self):
-        """Додавання фото безпосередньо до обраного замовлення в таблиці"""
+        """Безпечне додавання фото без закриття програми"""
         selected_row = self.table.currentRow()
         if selected_row == -1:
-            QMessageBox.warning(self, "Увага", "Спочатку оберіть або створіть замовлення в таблиці!")
+            QMessageBox.warning(self, "Увага", "Спочатку оберіть замовлення в таблиці!")
             return
 
-        order_id = self.get_cell_text(selected_row, 0)
-        if not order_id:
-            QMessageBox.warning(self, "Увага", "Неможливо прикріпити фото: замовлення не має ID!")
+        order_id_str = self.get_cell_text(selected_row, 0)
+        if not order_id_str:
+            QMessageBox.warning(self, "Увага", "Неможливо додавати фото до незбереженого замовлення!")
+            return
+
+        try:
+            order_id = int(order_id_str)
+        except ValueError:
             return
 
         files, _ = QFileDialog.getOpenFileNames(
             self, "Оберіть фотографії", "", "Зображення (*.png *.jpg *.jpeg *.bmp)"
         )
+        
         if files:
+            added_count = 0
             for photo_path in files:
                 if os.path.exists(photo_path):
-                    ext = os.path.splitext(photo_path)[1]
-                    new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
-                    dest_path = os.path.join(UPLOAD_DIR, new_filename)
-                    
-                    # Копіюємо фото в папку uploads
-                    shutil.copy(photo_path, dest_path)
-                    
-                    # Записуємо в базі даних
-                    self.cursor.execute("""
-                        INSERT INTO order_photos (order_id, photo_path)
-                        VALUES (?, ?)
-                    """, (order_id, dest_path))
+                    try:
+                        ext = os.path.splitext(photo_path)[1]
+                        new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
+                        dest_path = os.path.join(UPLOAD_DIR, new_filename)
+                        
+                        shutil.copy(photo_path, dest_path)
+                        
+                        self.cursor.execute("""
+                            INSERT INTO order_photos (order_id, photo_path)
+                            VALUES (?, ?)
+                        """, (order_id, dest_path))
+                        added_count += 1
+                    except Exception as e:
+                        print(f"Помилка при збереженні фото: {e}")
 
             self.conn.commit()
 
-            # Оновлюємо лічильник фото в таблиці для цього рядка
+            # Оновлюємо лічильник фото в таблиці
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
             
@@ -549,7 +574,7 @@ class ServiceManagerApp(QMainWindow):
             self.is_loading = False
 
             self.lbl_photo_count.setText(f"Обрано: {photo_count}")
-            QMessageBox.information(self, "Успіх", f"Додано {len(files)} фото до замовлення №{order_id}!")
+            QMessageBox.information(self, "Успіх", f"Додано {added_count} фото до замовлення №{order_id}!")
 
     def view_photos(self):
         selected_row = self.table.currentRow()
@@ -575,27 +600,23 @@ class ServiceManagerApp(QMainWindow):
         self.date_sale_edit.setEnabled(checked)
 
     def quick_order(self):
-        """Створення швидкого замовлення з очищенням форми та синхронізацією"""
-        # 1. Очищаємо поля зверху
+        """Створення швидкого замовлення з автоматичною очисткою та виділенням"""
         self.clear_fields()
 
         today = QDate.currentDate().toString("dd.MM.yyyy")
         date_out_default = QDate.currentDate().addMonths(3).toString("dd.MM.yyyy")
 
-        # 2. Додаємо порожній запис в БД
         self.cursor.execute("""
             INSERT INTO orders (client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ("", "", "", today, date_out_default, "", "", "", "", "В роботі"))
         self.conn.commit()
 
-        # 3. Перезавантажуємо таблицю та виділяємо новий рядок
         self.load_orders()
         
-        # Шукаємо створений новий рядок (він знаходиться зверху, бо ORDER BY id DESC)
+        # Виділяємо новий рядок (він перший зверху)
         if self.table.rowCount() > 0:
             self.table.selectRow(0)
-            self.fill_form_from_table()
 
     def auto_save_cell(self, row, column):
         if self.is_loading:
@@ -641,15 +662,22 @@ class ServiceManagerApp(QMainWindow):
             return False
 
     def apply_row_highlight(self, row_idx):
+        """Підсвічування рядків: обраний -> світло-зелений (#D4EDDA), протермінований -> світло-червоний (#FFCDD2)"""
+        is_selected = (self.table.currentRow() == row_idx)
         date_in_str = self.get_cell_text(row_idx, 4)
         status_str = self.get_cell_text(row_idx, 10)
 
-        highlight_color = QColor("#FFCDD2") if self.is_overdue(date_in_str, status_str) else QColor("#FFFFFF")
+        if is_selected:
+            bg_color = QColor("#D4EDDA")  # Світло-зелений колір для обраного замовлення
+        elif self.is_overdue(date_in_str, status_str):
+            bg_color = QColor("#FFCDD2")  # Світло-червоний для протермінованого
+        else:
+            bg_color = QColor("#FFFFFF")
 
         for col_idx in range(self.table.columnCount()):
             item = self.table.item(row_idx, col_idx)
             if item:
-                item.setBackground(highlight_color)
+                item.setBackground(bg_color)
 
     def save_order(self):
         client = self.client_input.text().strip()
@@ -681,16 +709,17 @@ class ServiceManagerApp(QMainWindow):
 
         for photo_path in self.selected_photos:
             if os.path.exists(photo_path):
-                ext = os.path.splitext(photo_path)[1]
-                new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
-                dest_path = os.path.join(UPLOAD_DIR, new_filename)
-                
-                shutil.copy(photo_path, dest_path)
-                
-                self.cursor.execute("""
-                    INSERT INTO order_photos (order_id, photo_path)
-                    VALUES (?, ?)
-                """, (order_id, dest_path))
+                try:
+                    ext = os.path.splitext(photo_path)[1]
+                    new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
+                    dest_path = os.path.join(UPLOAD_DIR, new_filename)
+                    shutil.copy(photo_path, dest_path)
+                    self.cursor.execute("""
+                        INSERT INTO order_photos (order_id, photo_path)
+                        VALUES (?, ?)
+                    """, (order_id, dest_path))
+                except Exception as e:
+                    print(f"Помилка при збереженні: {e}")
 
         self.conn.commit()
 
@@ -767,9 +796,6 @@ class ServiceManagerApp(QMainWindow):
         return item.text().strip() if item else ""
 
     def fill_form_from_table(self):
-        if self.is_loading:
-            return
-
         selected_row = self.table.currentRow()
         if selected_row < 0:
             return
@@ -814,6 +840,16 @@ class ServiceManagerApp(QMainWindow):
         if idx >= 0:
             self.status_box.setCurrentIndex(idx)
 
+        # Оновлюємо відображення лічильника фотографій для вибраного рядка
+        order_id = self.get_cell_text(selected_row, 0)
+        if order_id:
+            try:
+                self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (int(order_id),))
+                count = self.cursor.fetchone()[0]
+                self.lbl_photo_count.setText(f"Обрано: {count}")
+            except Exception:
+                self.lbl_photo_count.setText("Обрано: 0")
+
     def clear_fields(self):
         self.client_input.clear()
         self.phone_input.clear()
@@ -857,7 +893,7 @@ class ServiceManagerApp(QMainWindow):
             QMessageBox.information(self, "Кошик", f"Замовлення №{order_id} переміщено в кошик.")
 
     def print_receipt(self):
-        """Формування макету квитанції на пів аркуша А4 (у верхній частині книжкового А4)"""
+        """Макет квитанції на пів аркуша А4 (у верхній частині книжкового А4)"""
         selected_row = self.table.currentRow()
         if selected_row == -1:
             QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення зі списку таблиці!")
@@ -881,20 +917,15 @@ class ServiceManagerApp(QMainWindow):
             docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
             pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
             
-            # Використовуємо стандартний формат A4 (portrait / книжкова)
-            from reportlab.lib.pagesizes import A4
             c = canvas.Canvas(pdf_filename, pagesize=A4)
-            width, height = A4  # width ~ 595.27, height ~ 841.89
+            width, height = A4
 
-            # Верхня половина аркуша A4 відповідає Y від height/2 до height
             half_height = height / 2
 
-            # Зовнішня рамка для верхньої половини аркуша
             c.setStrokeColor(colors.HexColor("#2C3E50"))
             c.setLineWidth(1.5)
             c.rect(10, half_height + 10, width - 20, half_height - 20)
 
-            # Шапка квитанції
             c.setFillColor(colors.HexColor("#2C3E50"))
             c.rect(10, height - 45, width - 20, 35, fill=1, stroke=0)
 
@@ -940,7 +971,6 @@ class ServiceManagerApp(QMainWindow):
             y -= 15
             c.line(20, y + 10, width - 20, y + 10)
 
-            y -= 15
             c.drawString(20, y, f"Несправність: {issue}")
 
             y -= 15
