@@ -506,12 +506,50 @@ class ServiceManagerApp(QMainWindow):
         self.load_orders()
 
     def select_photos(self):
+        """Додавання фото безпосередньо до обраного замовлення в таблиці"""
+        selected_row = self.table.currentRow()
+        if selected_row == -1:
+            QMessageBox.warning(self, "Увага", "Спочатку оберіть або створіть замовлення в таблиці!")
+            return
+
+        order_id = self.get_cell_text(selected_row, 0)
+        if not order_id:
+            QMessageBox.warning(self, "Увага", "Неможливо прикріпити фото: замовлення не має ID!")
+            return
+
         files, _ = QFileDialog.getOpenFileNames(
             self, "Оберіть фотографії", "", "Зображення (*.png *.jpg *.jpeg *.bmp)"
         )
         if files:
-            self.selected_photos = files
-            self.lbl_photo_count.setText(f"Обрано: {len(files)}")
+            for photo_path in files:
+                if os.path.exists(photo_path):
+                    ext = os.path.splitext(photo_path)[1]
+                    new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
+                    dest_path = os.path.join(UPLOAD_DIR, new_filename)
+                    
+                    # Копіюємо фото в папку uploads
+                    shutil.copy(photo_path, dest_path)
+                    
+                    # Записуємо в базі даних
+                    self.cursor.execute("""
+                        INSERT INTO order_photos (order_id, photo_path)
+                        VALUES (?, ?)
+                    """, (order_id, dest_path))
+
+            self.conn.commit()
+
+            # Оновлюємо лічильник фото в таблиці для цього рядка
+            self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
+            photo_count = self.cursor.fetchone()[0]
+            
+            self.is_loading = True
+            photo_item = QTableWidgetItem(f"📷 ({photo_count})")
+            photo_item.setFlags(photo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(selected_row, 11, photo_item)
+            self.is_loading = False
+
+            self.lbl_photo_count.setText(f"Обрано: {photo_count}")
+            QMessageBox.information(self, "Успіх", f"Додано {len(files)} фото до замовлення №{order_id}!")
 
     def view_photos(self):
         selected_row = self.table.currentRow()
@@ -537,19 +575,27 @@ class ServiceManagerApp(QMainWindow):
         self.date_sale_edit.setEnabled(checked)
 
     def quick_order(self):
-        """Створення швидкого замовлення з вірним форматом дати (ДД.ММ.РРРР)"""
+        """Створення швидкого замовлення з очищенням форми та синхронізацією"""
+        # 1. Очищаємо поля зверху
+        self.clear_fields()
+
         today = QDate.currentDate().toString("dd.MM.yyyy")
         date_out_default = QDate.currentDate().addMonths(3).toString("dd.MM.yyyy")
 
+        # 2. Додаємо порожній запис в БД
         self.cursor.execute("""
             INSERT INTO orders (client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ("", "", "", today, date_out_default, "", "", "", "", "В роботі"))
         self.conn.commit()
 
+        # 3. Перезавантажуємо таблицю та виділяємо новий рядок
         self.load_orders()
-        new_row_idx = self.table.rowCount() - 1
-        self.table.selectRow(new_row_idx)
+        
+        # Шукаємо створений новий рядок (він знаходиться зверху, бо ORDER BY id DESC)
+        if self.table.rowCount() > 0:
+            self.table.selectRow(0)
+            self.fill_form_from_table()
 
     def auto_save_cell(self, row, column):
         if self.is_loading:
