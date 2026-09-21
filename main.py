@@ -566,6 +566,13 @@ class ServiceManagerApp(QMainWindow):
         for r in range(self.table.rowCount()):
             self.apply_row_highlight(r)
 
+    def open_photo_dialog_for_id(self, order_id):
+        """Відкриває діалог перегляду фото за ідентифікатором замовлення"""
+        if not order_id:
+            return
+        dialog = PhotoViewerDialog(int(order_id), self.conn, self)
+        dialog.exec()
+
     def select_photos(self):
         selected_row = self.table.currentRow()
         if selected_row == -1:
@@ -632,9 +639,10 @@ class ServiceManagerApp(QMainWindow):
             photo_count = self.cursor.fetchone()[0]
 
             self.is_loading = True
-            photo_item = QTableWidgetItem(f"📷 ({photo_count})")
-            photo_item.setFlags(photo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(selected_row, 11, photo_item)
+            btn_photo = QPushButton(f"📷 Фото ({photo_count})")
+            btn_photo.setStyleSheet("background-color: #3498DB; color: white; border-radius: 3px; padding: 2px; font-weight: bold;")
+            btn_photo.clicked.connect(lambda _, oid=order_id: self.open_photo_dialog_for_id(oid))
+            self.table.setCellWidget(selected_row, 11, btn_photo)
             self.is_loading = False
 
             self.lbl_photo_count.setText(f"Обрано: {photo_count}")
@@ -651,8 +659,7 @@ class ServiceManagerApp(QMainWindow):
         if not order_id:
             return
 
-        dialog = PhotoViewerDialog(int(order_id), self.conn, self)
-        dialog.exec()
+        self.open_photo_dialog_for_id(order_id)
 
     def open_trash(self):
         dialog = TrashDialog(self.conn, self)
@@ -812,12 +819,14 @@ class ServiceManagerApp(QMainWindow):
             )
             self.table.setCellWidget(row_idx, 10, status_combo)
 
-            # --- Кількість фото (Колонка 11) ---
+            # --- Кнопка відкриття фото (Колонка 11) ---
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
-            photo_item = QTableWidgetItem(f"📷 ({photo_count})")
-            photo_item.setFlags(photo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row_idx, 11, photo_item)
+
+            btn_photo = QPushButton(f"📷 Фото ({photo_count})")
+            btn_photo.setStyleSheet("background-color: #3498DB; color: white; border-radius: 3px; padding: 2px; font-weight: bold;")
+            btn_photo.clicked.connect(lambda _, oid=order_id: self.open_photo_dialog_for_id(oid))
+            self.table.setCellWidget(row_idx, 11, btn_photo)
 
             self.apply_row_highlight(row_idx)
 
@@ -872,6 +881,8 @@ class ServiceManagerApp(QMainWindow):
         widget = self.table.cellWidget(row, col)
         if isinstance(widget, QComboBox):
             return widget.currentText().strip()
+        if isinstance(widget, QPushButton):
+            return widget.text().strip()
         item = self.table.item(row, col)
         return item.text().strip() if item else ""
 
