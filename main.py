@@ -4,16 +4,14 @@ import sqlite3
 import shutil
 import urllib.request
 from datetime import datetime
-
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
-    QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox, QDialog,
-    QFileDialog, QScrollArea, QStyledItemDelegate
+    QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox,
+    QDialog, QFileDialog, QScrollArea, QStyledItemDelegate
 )
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QPixmap
-
+from PyQt6.QtGui import QPixmap, QColor
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -34,25 +32,23 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 PYTHON_DATE_FORMAT = "%d.%m.%Y"
 
+
 def format_date_to_ukr(date_str):
     """Конвертує дату у формат dd.MM.yyyy"""
     if not date_str or date_str == "None":
         return ""
-    
     d = QDate.fromString(str(date_str), "dd.MM.yyyy")
     if d.isValid():
         return d.toString("dd.MM.yyyy")
-    
     d = QDate.fromString(str(date_str), "yyyy-MM-dd")
     if d.isValid():
         return d.toString("dd.MM.yyyy")
-        
     return str(date_str)
+
 
 def setup_cyrillic_font():
     """Системний шрифт для кирилиці в PDF"""
     win_font_path = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf')
-    
     if os.path.exists(win_font_path):
         try:
             pdfmetrics.registerFont(TTFont('ArialWin', win_font_path))
@@ -76,6 +72,7 @@ def setup_cyrillic_font():
             pass
 
     return 'Helvetica'
+
 
 def get_logo_path():
     base_path = BASE_DIR
@@ -115,20 +112,17 @@ class PhotoViewerDialog(QDialog):
         self.order_id = order_id
         self.conn = conn
         self.cursor = self.conn.cursor()
-        
         self.setWindowTitle(f"🖼️ Фотографії замовлення №{self.order_id}")
         self.resize(650, 550)
-        
         self.init_ui()
 
     def init_ui(self):
         self.layout = QVBoxLayout(self)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        
         self.load_photos_widget()
         self.layout.addWidget(self.scroll)
-        
+
         btn_close = QPushButton("Закрити")
         btn_close.setStyleSheet("padding: 6px; font-weight: bold;")
         btn_close.clicked.connect(self.accept)
@@ -146,7 +140,6 @@ class PhotoViewerDialog(QDialog):
         else:
             for photo_id, path in photos:
                 photo_item_layout = QVBoxLayout()
-                
                 if os.path.exists(path):
                     lbl = QLabel()
                     pixmap = QPixmap(path)
@@ -156,10 +149,12 @@ class PhotoViewerDialog(QDialog):
                     photo_item_layout.addWidget(QLabel(f"Файл не знайдено: {path}"))
 
                 btn_delete_photo = QPushButton("🗑️ Видалити фото")
-                btn_delete_photo.setStyleSheet("background-color: #E74C3C; color: white; font-weight: bold; padding: 4px; margin-bottom: 15px;")
+                btn_delete_photo.setStyleSheet(
+                    "background-color: #E74C3C; color: white; font-weight: bold; padding: 4px; margin-bottom: 15px;"
+                )
                 btn_delete_photo.clicked.connect(lambda _, pid=photo_id, ppath=path: self.delete_photo(pid, ppath))
-                
                 photo_item_layout.addWidget(btn_delete_photo)
+
                 scroll_layout.addLayout(photo_item_layout)
 
         self.scroll.setWidget(content_widget)
@@ -173,10 +168,8 @@ class PhotoViewerDialog(QDialog):
             try:
                 self.cursor.execute("DELETE FROM order_photos WHERE id = ?", (photo_id,))
                 self.conn.commit()
-
                 if os.path.exists(photo_path):
                     os.remove(photo_path)
-
                 self.load_photos_widget()
 
                 if self.parent() and hasattr(self.parent(), 'update_photo_count_for_selected_row'):
@@ -207,14 +200,14 @@ class TrashDialog(QDialog):
         self.table = QTableWidget()
         self.table.setColumnCount(12)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Клієнт", "Телефон", "Дата продажу", "Дата прийому", "Дата видачі", 
-            "Товар", "Серійний №", "Комплектація", "Несправність", "Статус", "Дата видалення"
+            "ID", "Клієнт", "Телефон", "Дата продажу", "Дата прийому",
+            "Дата видачі", "Товар", "Серійний №", "Комплектація", "Несправність",
+            "Статус", "Дата видалення"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
 
         btn_layout = QHBoxLayout()
-        
         restore_btn = QPushButton("♻️ Відновити замовлення")
         restore_btn.setStyleSheet("background-color: #27AE60; color: white; font-weight: bold; padding: 6px;")
         restore_btn.clicked.connect(self.restore_order)
@@ -235,7 +228,9 @@ class TrashDialog(QDialog):
 
     def load_trash(self):
         self.table.setRowCount(0)
-        self.cursor.execute("SELECT original_id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status, deleted_at FROM deleted_orders")
+        self.cursor.execute(
+            "SELECT original_id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status, deleted_at FROM deleted_orders"
+        )
         rows = self.cursor.fetchall()
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
@@ -314,21 +309,20 @@ class ServiceManagerApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Облік ремонту інструменту та обладнання — БЕНЗО ІНСТРУМЕНТ")
         self.setGeometry(100, 100, 1200, 780)
-        
+
         self.font_name = setup_cyrillic_font()
         self.logo_path = get_logo_path()
         self.is_loading = False
         self.selected_photos = []
-        
+
         self.init_db()
         self.init_ui()
 
     def init_db(self):
         db_path = os.path.join(APP_DATA_DIR, "service_orders.db")
-        
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
-        
+
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -371,7 +365,7 @@ class ServiceManagerApp(QMainWindow):
                 FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
             )
         """)
-        
+
         self.cursor.execute("PRAGMA table_info(orders)")
         columns = [column[1] for column in self.cursor.fetchall()]
         if 'date_sale' not in columns:
@@ -439,7 +433,7 @@ class ServiceManagerApp(QMainWindow):
         r3 = QHBoxLayout()
         self.has_sale_date_checkbox = QCheckBox("Вказати дату продажу:")
         self.has_sale_date_checkbox.toggled.connect(self.toggle_sale_date)
-        
+
         self.date_sale_edit = QDateEdit()
         self.date_sale_edit.setDisplayFormat("dd.MM.yyyy")
         self.date_sale_edit.setDate(QDate.currentDate())
@@ -472,7 +466,6 @@ class ServiceManagerApp(QMainWindow):
         r4 = QHBoxLayout()
         self.issue_input = QLineEdit()
         self.issue_input.setPlaceholderText("Опис несправності")
-        
         self.btn_select_photo = QPushButton("📷 Додати фото")
         self.btn_select_photo.clicked.connect(self.select_photos)
         self.lbl_photo_count = QLabel("Обрано: 0")
@@ -486,14 +479,13 @@ class ServiceManagerApp(QMainWindow):
         main_layout.addLayout(form_layout)
 
         btn_layout = QHBoxLayout()
-        
         quick_order_btn = QPushButton("⚡ Швидке замовлення")
         quick_order_btn.setStyleSheet("background-color: #27AE60; color: white; font-weight: bold; padding: 6px;")
         quick_order_btn.clicked.connect(self.quick_order)
 
         save_btn = QPushButton("Зберегти замовлення")
         save_btn.clicked.connect(self.save_order)
-        
+
         view_photo_btn = QPushButton("🖼️ Переглянути / видалити фото")
         view_photo_btn.setStyleSheet("background-color: #2980B9; color: white; font-weight: bold;")
         view_photo_btn.clicked.connect(self.view_photos)
@@ -518,7 +510,6 @@ class ServiceManagerApp(QMainWindow):
         self.search_input.setPlaceholderText("Введіть ім'я або номер телефону...")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self.search_orders)
-        
         search_layout.addWidget(search_label)
         search_layout.addWidget(self.search_input)
         main_layout.addLayout(search_layout)
@@ -526,21 +517,28 @@ class ServiceManagerApp(QMainWindow):
         self.table = QTableWidget()
         self.table.setColumnCount(12)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Клієнт", "Телефон", "Дата продажу", "Дата прийому", "Дата видачі", 
-            "Товар", "Серійний №", "Комплектація", "Несправність", "Статус", "Фото"
+            "ID", "Клієнт", "Телефон", "Дата продажу", "Дата прийому",
+            "Дата видачі", "Товар", "Серійний №", "Комплектація", "Несправність",
+            "Статус", "Фото"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        
+
+        # Выделение всей строки целиком
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+
         date_delegate = DateDelegate(self.table)
         self.table.setItemDelegateForColumn(3, date_delegate)
         self.table.setItemDelegateForColumn(4, date_delegate)
         self.table.setItemDelegateForColumn(5, date_delegate)
 
+        # Отключаем стандартную синюю подсветку Qt, чтобы работали наши QColor
         self.table.setStyleSheet("""
             QTableWidget::item:selected {
-                background-color: #D4EDDA;
-                color: #155724;
-                font-weight: bold;
+                background-color: transparent;
+            }
+            QTableWidget::item:focus {
+                background-color: transparent;
             }
         """)
 
@@ -577,12 +575,10 @@ class ServiceManagerApp(QMainWindow):
             return
 
         files, _ = QFileDialog.getOpenFileNames(
-            self, 
-            "Оберіть фотографії", 
-            "", 
+            self, "Оберіть фотографії", "",
             "Зображення (*.png *.jpg *.jpeg *.bmp *.webp *.PNG *.JPG *.JPEG *.BMP *.WEBP);;Усі файли (*.*)"
         )
-        
+
         if files:
             added_count = 0
             for photo_path in files:
@@ -591,21 +587,19 @@ class ServiceManagerApp(QMainWindow):
                         ext = os.path.splitext(photo_path)[1]
                         new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
                         dest_path = os.path.join(UPLOAD_DIR, new_filename)
-                        
                         shutil.copy2(photo_path, dest_path)
-                        
+
                         self.cursor.execute("""
                             INSERT INTO order_photos (order_id, photo_path)
                             VALUES (?, ?)
                         """, (order_id, dest_path))
-                        
                         added_count += 1
                     except Exception as e:
                         print(f"Помилка при збереженні фото: {e}")
 
             self.conn.commit()
             self.update_photo_count_for_selected_row()
-            
+
             if added_count > 0:
                 QMessageBox.information(self, "Успіх", f"Успішно додано {added_count} фото до замовлення №{order_id}!")
             else:
@@ -615,7 +609,6 @@ class ServiceManagerApp(QMainWindow):
         selected_row = self.table.currentRow()
         if selected_row == -1:
             return
-
         order_id_str = self.get_cell_text(selected_row, 0)
         if not order_id_str:
             return
@@ -640,11 +633,9 @@ class ServiceManagerApp(QMainWindow):
         if selected_row == -1:
             QMessageBox.warning(self, "Увага", "Оберіть замовлення з таблиці!")
             return
-
         order_id = self.get_cell_text(selected_row, 0)
         if not order_id:
             return
-
         dialog = PhotoViewerDialog(int(order_id), self.conn, self)
         dialog.exec()
 
@@ -657,7 +648,6 @@ class ServiceManagerApp(QMainWindow):
 
     def quick_order(self):
         self.clear_fields()
-
         today = QDate.currentDate().toString("dd.MM.yyyy")
         date_out_default = QDate.currentDate().addMonths(3).toString("dd.MM.yyyy")
 
@@ -668,7 +658,6 @@ class ServiceManagerApp(QMainWindow):
         self.conn.commit()
 
         self.load_orders()
-        
         if self.table.rowCount() > 0:
             self.table.selectRow(0)
 
@@ -707,7 +696,6 @@ class ServiceManagerApp(QMainWindow):
     def is_overdue(self, date_in_str, status_str):
         if not date_in_str or status_str in ["Готово", "Видано"]:
             return False
-
         try:
             date_in = datetime.strptime(date_in_str, PYTHON_DATE_FORMAT).date()
             today = datetime.now().date()
@@ -719,37 +707,35 @@ class ServiceManagerApp(QMainWindow):
         is_selected = (self.table.currentRow() == row_idx)
         date_in_str = self.get_cell_text(row_idx, 4)
         status_str = self.get_cell_text(row_idx, 10)
-        
-        # Определяем цвета для строки
+
+        # Подсветка строки
         if is_selected:
-            # Цвет для выделенной строки (светло-зеленый с темным текстом)
+            # Выделенная строка (светло-зеленый)
             bg_color = QColor("#D4EDDA")
             text_color = QColor("#155724")
         elif self.is_overdue(date_in_str, status_str):
-            # Цвет для просроченной строки (светло-красный)
+            # Просроченная строка (светло-красный)
             bg_color = QColor("#F8D7DA")
             text_color = QColor("#721C24")
         else:
-            # Обычный цвет для невыделенной строки
+            # Обычная строка
             bg_color = QColor("#FFFFFF")
             text_color = QColor("#000000")
 
-        # Применяем цвет ко ВСЕМ ячейкам в строке
+        # Применяем фоновый цвет и цвет текста ко всем ячейкам в строке
         for col_idx in range(self.table.columnCount()):
             item = self.table.item(row_idx, col_idx)
-            if item:
-                item.setBackground(bg_color)
-                item.setForeground(text_color)
+            if not item:
+                item = QTableWidgetItem()
+                self.table.setItem(row_idx, col_idx, item)
+
+            item.setBackground(bg_color)
+            item.setForeground(text_color)
 
     def save_order(self):
         client = self.client_input.text().strip()
         phone = self.phone_input.text().strip()
-        
-        if self.has_sale_date_checkbox.isChecked():
-            date_sale = self.date_sale_edit.date().toString("dd.MM.yyyy")
-        else:
-            date_sale = ""
-
+        date_sale = self.date_sale_edit.date().toString("dd.MM.yyyy") if self.has_sale_date_checkbox.isChecked() else ""
         date_in = self.date_in_edit.date().toString("dd.MM.yyyy")
         date_out = self.date_out_edit.date().toString("dd.MM.yyyy")
         item = self.item_input.text().strip()
@@ -758,315 +744,312 @@ class ServiceManagerApp(QMainWindow):
         issue = self.issue_input.text().strip()
         status = self.status_box.currentText()
 
-        if not client or not item:
-            QMessageBox.warning(self, "Помилка", "Заповніть обов'язкові поля (Клієнт та Товар)!")
-            return
+        selected_row = self.table.currentRow()
+        order_id = self.get_cell_text(selected_row, 0) if selected_row != -1 else None
 
-        self.cursor.execute("""
-            INSERT INTO orders (client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (client, phone, date_in, date_out, item, serial, equipment, issue, status, date_sale))
-        
-        order_id = self.cursor.lastrowid
-
-        for photo_path in self.selected_photos:
-            if os.path.exists(photo_path):
-                try:
-                    ext = os.path.splitext(photo_path)[1]
-                    new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
-                    dest_path = os.path.join(UPLOAD_DIR, new_filename)
-                    shutil.copy2(photo_path, dest_path)
-                    self.cursor.execute("""
-                        INSERT INTO order_photos (order_id, photo_path)
-                        VALUES (?, ?)
-                    """, (order_id, dest_path))
-                except Exception as e:
-                    print(f"Помилка при збереженні: {e}")
+        if order_id:
+            self.cursor.execute("""
+                UPDATE orders
+                SET client_name = ?, phone = ?, date_sale = ?, date_in = ?, date_out = ?, item_name = ?, serial_num = ?, equipment = ?, issue = ?, status = ?
+                WHERE id = ?
+            """, (client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status, order_id))
+        else:
+            self.cursor.execute("""
+                INSERT INTO orders (client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status))
 
         self.conn.commit()
-
-        self.clear_fields()
         self.load_orders()
+        self.clear_fields()
         QMessageBox.information(self, "Успіх", "Замовлення збережено!")
 
     def load_orders(self):
         self.is_loading = True
         self.table.setRowCount(0)
-        self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders ORDER BY id DESC")
+
+        self.cursor.execute("""
+            SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status
+            FROM orders
+            ORDER BY id DESC
+        """)
         rows = self.cursor.fetchall()
+
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
-            for col_idx, value in enumerate(row_data):
-                val_str = str(value) if value is not None else ""
+
+            for col_idx in range(11):
+                val = row_data[col_idx]
+                val_str = str(val if val is not None else "")
+
                 if col_idx in (3, 4, 5):
                     val_str = format_date_to_ukr(val_str)
+
                 item = QTableWidgetItem(val_str)
                 if col_idx == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
                 self.table.setItem(row_idx, col_idx, item)
-            
+
             order_id = row_data[0]
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
+
             photo_item = QTableWidgetItem(f"📷 ({photo_count})")
             photo_item.setFlags(photo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row_idx, 11, photo_item)
 
-            self.apply_row_highlight(row_idx)
-
         self.is_loading = False
+        self.refresh_all_highlights()
 
     def search_orders(self):
+        query_text = self.search_input.text().strip()
         self.is_loading = True
-        query = self.search_input.text().strip()
         self.table.setRowCount(0)
-        
-        if not query:
-            self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders ORDER BY id DESC")
-        else:
-            search_pattern = f"%{query}%"
-            self.cursor.execute("""
-                SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders 
-                WHERE client_name LIKE ? OR phone LIKE ? ORDER BY id DESC
-            """, (search_pattern, search_pattern))
-            
+
+        search_query = "%" + query_text + "%"
+        self.cursor.execute("""
+            SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status
+            FROM orders
+            WHERE client_name LIKE ? OR phone LIKE ?
+            ORDER BY id DESC
+        """, (search_query, search_query))
+
         rows = self.cursor.fetchall()
+
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
-            for col_idx, value in enumerate(row_data):
-                val_str = str(value) if value is not None else ""
+
+            for col_idx in range(11):
+                val = row_data[col_idx]
+                val_str = str(val if val is not None else "")
+
                 if col_idx in (3, 4, 5):
                     val_str = format_date_to_ukr(val_str)
+
                 item = QTableWidgetItem(val_str)
                 if col_idx == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
                 self.table.setItem(row_idx, col_idx, item)
 
             order_id = row_data[0]
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
+
             photo_item = QTableWidgetItem(f"📷 ({photo_count})")
             photo_item.setFlags(photo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row_idx, 11, photo_item)
 
-            self.apply_row_highlight(row_idx)
-
         self.is_loading = False
-
-    def get_cell_text(self, row, col):
-        item = self.table.item(row, col)
-        return item.text().strip() if item else ""
-
-    def fill_form_from_table(self):
-        selected_row = self.table.currentRow()
-        if selected_row < 0:
-            return
-
-        self.client_input.setText(self.get_cell_text(selected_row, 1))
-        self.phone_input.setText(self.get_cell_text(selected_row, 2))
-
-        date_sale_str = self.get_cell_text(selected_row, 3)
-        if date_sale_str and date_sale_str != "None":
-            self.has_sale_date_checkbox.setChecked(True)
-            d = QDate.fromString(date_sale_str, "dd.MM.yyyy")
-            if not d.isValid():
-                d = QDate.fromString(date_sale_str, "yyyy-MM-dd")
-            if d.isValid():
-                self.date_sale_edit.setDate(d)
-        else:
-            self.has_sale_date_checkbox.setChecked(False)
-
-        date_in_str = self.get_cell_text(selected_row, 4)
-        if date_in_str:
-            d = QDate.fromString(date_in_str, "dd.MM.yyyy")
-            if not d.isValid():
-                d = QDate.fromString(date_in_str, "yyyy-MM-dd")
-            if d.isValid():
-                self.date_in_edit.setDate(d)
-        
-        date_out_str = self.get_cell_text(selected_row, 5)
-        if date_out_str:
-            d = QDate.fromString(date_out_str, "dd.MM.yyyy")
-            if not d.isValid():
-                d = QDate.fromString(date_out_str, "yyyy-MM-dd")
-            if d.isValid():
-                self.date_out_edit.setDate(d)
-
-        self.item_input.setText(self.get_cell_text(selected_row, 6))
-        self.serial_input.setText(self.get_cell_text(selected_row, 7))
-        self.equipment_input.setText(self.get_cell_text(selected_row, 8))
-        self.issue_input.setText(self.get_cell_text(selected_row, 9))
-
-        status_str = self.get_cell_text(selected_row, 10)
-        idx = self.status_box.findText(status_str)
-        if idx >= 0:
-            self.status_box.setCurrentIndex(idx)
-
-        order_id = self.get_cell_text(selected_row, 0)
-        if order_id:
-            try:
-                self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (int(order_id),))
-                count = self.cursor.fetchone()[0]
-                self.lbl_photo_count.setText(f"Обрано: {count}")
-            except Exception:
-                self.lbl_photo_count.setText("Обрано: 0")
-
-    def clear_fields(self):
-        self.client_input.clear()
-        self.phone_input.clear()
-        self.item_input.clear()
-        self.serial_input.clear()
-        self.equipment_input.clear()
-        self.issue_input.clear()
-        self.search_input.clear()
-        self.selected_photos = []
-        self.lbl_photo_count.setText("Обрано: 0")
-        self.has_sale_date_checkbox.setChecked(False)
-        self.date_sale_edit.setDate(QDate.currentDate())
-        self.date_in_edit.setDate(QDate.currentDate())
-        self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
+        self.refresh_all_highlights()
 
     def delete_order(self):
         selected_row = self.table.currentRow()
         if selected_row == -1:
-            QMessageBox.warning(self, "Помилка", "Оберіть рядок!")
+            QMessageBox.warning(self, "Увага", "Оберіть замовлення для видалення!")
             return
 
         order_id = self.get_cell_text(selected_row, 0)
         if not order_id:
             return
 
-        self.cursor.execute("SELECT id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale FROM orders WHERE id = ?", (order_id,))
-        row = self.cursor.fetchone()
+        confirm = QMessageBox.question(
+            self, "Підтвердження", f"Перемістити замовлення №{order_id} в кошик?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
 
-        if row:
-            deleted_at = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        if confirm == QMessageBox.StandardButton.Yes:
+            client = self.get_cell_text(selected_row, 1)
+            phone = self.get_cell_text(selected_row, 2)
+            date_sale = self.get_cell_text(selected_row, 3)
+            date_in = self.get_cell_text(selected_row, 4)
+            date_out = self.get_cell_text(selected_row, 5)
+            item = self.get_cell_text(selected_row, 6)
+            serial = self.get_cell_text(selected_row, 7)
+            equipment = self.get_cell_text(selected_row, 8)
+            issue = self.get_cell_text(selected_row, 9)
+            status = self.get_cell_text(selected_row, 10)
+            deleted_at = datetime.now().strftime("%d.%m.%Y %H:%M")
+
             self.cursor.execute("""
-                INSERT INTO deleted_orders (original_id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale, deleted_at)
+                INSERT INTO deleted_orders (original_id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status, deleted_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], deleted_at))
+            """, (order_id, client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status, deleted_at))
 
             self.cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
             self.conn.commit()
 
             self.load_orders()
             self.clear_fields()
-            QMessageBox.information(self, "Кошик", f"Замовлення №{order_id} переміщено в кошик.")
+            QMessageBox.information(self, "Успіх", "Замовлення переміщено в кошик!")
+
+    def fill_form_from_table(self):
+        selected_row = self.table.currentRow()
+        if selected_row == -1:
+            return
+
+        self.client_input.setText(self.get_cell_text(selected_row, 1))
+        self.phone_input.setText(self.get_cell_text(selected_row, 2))
+
+        date_sale_str = self.get_cell_text(selected_row, 3)
+        if date_sale_str:
+            self.has_sale_date_checkbox.setChecked(True)
+            d = QDate.fromString(date_sale_str, "dd.MM.yyyy")
+            if d.isValid():
+                self.date_sale_edit.setDate(d)
+        else:
+            self.has_sale_date_checkbox.setChecked(False)
+
+        d_in = QDate.fromString(self.get_cell_text(selected_row, 4), "dd.MM.yyyy")
+        if d_in.isValid():
+            self.date_in_edit.setDate(d_in)
+
+        d_out = QDate.fromString(self.get_cell_text(selected_row, 5), "dd.MM.yyyy")
+        if d_out.isValid():
+            self.date_out_edit.setDate(d_out)
+
+        self.item_input.setText(self.get_cell_text(selected_row, 6))
+        self.serial_input.setText(self.get_cell_text(selected_row, 7))
+        self.equipment_input.setText(self.get_cell_text(selected_row, 8))
+        self.issue_input.setText(self.get_cell_text(selected_row, 9))
+
+        status_text = self.get_cell_text(selected_row, 10)
+        idx = self.status_box.findText(status_text)
+        if idx != -1:
+            self.status_box.setCurrentIndex(idx)
+
+        self.update_photo_count_for_selected_row()
+
+    def clear_fields(self):
+        self.client_input.clear()
+        self.phone_input.clear()
+        self.has_sale_date_checkbox.setChecked(False)
+        self.date_sale_edit.setDate(QDate.currentDate())
+        self.date_in_edit.setDate(QDate.currentDate())
+        self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
+        self.item_input.clear()
+        self.serial_input.clear()
+        self.equipment_input.clear()
+        self.issue_input.clear()
+        self.status_box.setCurrentIndex(0)
+        self.lbl_photo_count.setText("Обрано: 0")
+
+    def get_cell_text(self, row, col):
+        item = self.table.item(row, col)
+        return item.text() if item else ""
 
     def print_receipt(self):
         selected_row = self.table.currentRow()
         if selected_row == -1:
-            QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення зі списку таблиці!")
+            QMessageBox.warning(self, "Увага", "Оберіть замовлення з таблиці!")
+            return
+
+        order_id = self.get_cell_text(selected_row, 0)
+        if not order_id:
+            return
+
+        client = self.get_cell_text(selected_row, 1)
+        phone = self.get_cell_text(selected_row, 2)
+        date_sale = self.get_cell_text(selected_row, 3)
+        date_in = self.get_cell_text(selected_row, 4)
+        date_out = self.get_cell_text(selected_row, 5)
+        item = self.get_cell_text(selected_row, 6)
+        serial = self.get_cell_text(selected_row, 7)
+        equipment = self.get_cell_text(selected_row, 8)
+        issue = self.get_cell_text(selected_row, 9)
+
+        file_path, _ = QFileDialog.getSaveFileName(self, "Зберегти квитанцію", f"Квитанція_{order_id}.pdf", "PDF файли (*.pdf)")
+        if not file_path:
             return
 
         try:
-            order_id = self.get_cell_text(selected_row, 0)
-            client = self.get_cell_text(selected_row, 1)
-            phone = self.get_cell_text(selected_row, 2)
-            date_sale = format_date_to_ukr(self.get_cell_text(selected_row, 3))
-            date_in = format_date_to_ukr(self.get_cell_text(selected_row, 4))
-            date_out = format_date_to_ukr(self.get_cell_text(selected_row, 5))
-            item = self.get_cell_text(selected_row, 6)
-            serial = self.get_cell_text(selected_row, 7)
-            equipment = self.get_cell_text(selected_row, 8)
-            issue = self.get_cell_text(selected_row, 9)
-            status = self.get_cell_text(selected_row, 10)
-
-            display_date_sale = date_sale if (date_sale and date_sale != "None") else "—"
-
-            docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
-            pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
-            
-            c = canvas.Canvas(pdf_filename, pagesize=A4)
+            c = canvas.Canvas(file_path, pagesize=A4)
             width, height = A4
 
-            half_height = height / 2
+            def draw_receipt_copy(y_offset, title_suffix):
+                c.setFont(self.font_name, 12)
 
-            c.setStrokeColor(colors.HexColor("#2C3E50"))
-            c.setLineWidth(1.5)
-            c.rect(10, half_height + 10, width - 20, half_height - 20)
+                if self.logo_path:
+                    try:
+                        c.drawImage(self.logo_path, 40, y_offset + 340, width=110, height=40, preserveAspectRatio=True)
+                    except Exception:
+                        pass
 
-            c.setFillColor(colors.HexColor("#2C3E50"))
-            c.rect(10, height - 45, width - 20, 35, fill=1, stroke=0)
+                c.drawString(160, y_offset + 365, "СЕРВІСНИЙ ЦЕНТР «БЕНЗО ІНСТРУМЕНТ»")
+                c.setFont(self.font_name, 9)
+                c.drawString(160, y_offset + 350, "м. Вінниця, вул. Лебединського 15 | Тел: (098) 551-73-21, (093) 104-20-40")
 
-            text_x = 20
-            if self.logo_path:
-                try:
-                    c.drawImage(self.logo_path, 15, height - 42, width=70, height=28, preserveAspectRatio=True, mask='auto')
-                    text_x = 95
-                except Exception:
-                    pass
+                c.setFont(self.font_name, 11)
+                c.drawString(40, y_offset + 320, f"КВИТАНЦІЯ ПРО ПРИЙОМ НА РЕМОНТ № {order_id} {title_suffix}")
+                c.setLineWidth(1)
+                c.line(40, y_offset + 312, width - 40, y_offset + 312)
 
-            c.setFillColor(colors.white)
-            c.setFont(self.font_name, 11)
-            c.drawString(text_x, height - 30, f"АКТ-КВИТАНЦІЯ ПРИЙОМУ № {order_id}")
-            
-            c.setFont(self.font_name, 9)
-            c.drawRightString(width - 20, height - 30, f"Дата прийому: {date_in}")
+                c.setFont(self.font_name, 10)
+                curr_y = y_offset + 292
+                line_height = 16
 
-            c.setFillColor(colors.black)
-            y = height - 65
+                c.drawString(40, curr_y, f"Клієнт: {client}")
+                c.drawString(320, curr_y, f"Телефон: {phone}")
+                curr_y -= line_height
 
-            c.setLineWidth(0.5)
-            c.setStrokeColor(colors.HexColor("#BDC3C7"))
+                if date_sale:
+                    c.drawString(40, curr_y, f"Дата продажу: {date_sale}")
+                    curr_y -= line_height
 
-            c.setFont(self.font_name, 10)
-            c.drawString(20, y, f"Клієнт (ПІБ): {client}")
-            c.drawRightString(width - 20, y, f"Телефон: {phone}")
-            
-            y -= 20
-            c.line(20, y + 12, width - 20, y + 12)
+                c.drawString(40, curr_y, f"Дата прийому: {date_in}")
+                c.drawString(320, curr_y, f"Орієнтовна дата видачі: {date_out}")
+                curr_y -= line_height
 
-            c.drawString(20, y, f"Товар / Інструмент: {item}")
-            c.drawString(320, y, f"Серійний №: {serial}")
+                c.drawString(40, curr_y, f"Найменування товару: {item}")
+                curr_y -= line_height
 
-            y -= 20
-            c.drawString(20, y, f"Комплектація: {equipment}")
-            c.drawString(320, y, f"Дата продажу: {display_date_sale}")
+                c.drawString(40, curr_y, f"Серійний номер: {serial}")
+                curr_y -= line_height
 
-            y -= 20
-            c.drawString(20, y, f"Статус: {status}")
-            c.drawString(320, y, f"Планова дата видачі: {date_out}")
+                c.drawString(40, curr_y, f"Комплектація: {equipment}")
+                curr_y -= line_height
 
-            y -= 15
-            c.line(20, y + 10, width - 20, y + 10)
+                c.drawString(40, curr_y, f"Опис несправності: {issue}")
+                curr_y -= (line_height + 5)
 
-            c.drawString(20, y, f"Несправність: {issue}")
+                c.setFont(self.font_name, 7)
+                rules = [
+                    "УМОВИ ОБСЛУГОВУВАННЯ ТА ГАРАНТІЇ:",
+                    "1. Сервісний центр не несе відповідальності за приховані дефекти, не вказані при прийомі.",
+                    "2. Видача інструменту здійснюється тільки при наявності даної квитанції.",
+                    "3. Зауваження щодо стану та комплектації приймаються безпосередньо при отриманні товару."
+                ]
+                for r in rules:
+                    c.drawString(40, curr_y, r)
+                    curr_y -= 9
 
-            y -= 15
-            c.line(20, y + 10, width - 20, y + 10)
+                curr_y -= 10
+                c.setFont(self.font_name, 9)
+                c.drawString(40, curr_y, "Замовник: ____________________")
+                c.drawString(320, curr_y, "Прийняв: ____________________")
 
-            y -= 15
-            c.setFont(self.font_name, 7.5)
-            c.setFillColor(colors.HexColor("#444444"))
-            notes = (
-                "1. Видача здійснюється за наявності даної квитанції.\n"
-                "2. Сервісний центр не відповідає за збереження даних.\n"
-                "3. Готове обладнання зберігається безоплатно протягом 30 днів."
-            )
-            text_obj = c.beginText(20, y)
-            text_obj.setLeading(10)
-            for line in notes.split('\n'):
-                text_obj.textLine(line)
-            c.drawText(text_obj)
+            draw_receipt_copy(410, "(Примірник Клієнта)")
 
-            y_sig = half_height + 30
-            c.setFont(self.font_name, 9)
-            c.setFillColor(colors.black)
-            c.drawString(20, y_sig, "Замовник: _________________ (підпис)")
-            c.drawRightString(width - 20, y_sig, "Прийняв: _________________ (підпис)")
+            c.setDash(2, 2)
+            c.line(40, 400, width - 40, 400)
+            c.setDash()
+
+            draw_receipt_copy(0, "(Примірник Сервісу)")
 
             c.save()
+            QMessageBox.information(self, "Успіх", f"Квитанцію успішно збережено в PDF:\n{file_path}")
 
-            QMessageBox.information(self, "Успіх", f"Квитанцію завантажено:\n{pdf_filename}")
-
-            if sys.platform == "win32":
-                os.startfile(pdf_filename)
         except Exception as e:
-            QMessageBox.critical(self, "Помилка", f"Не вдалося створити квитанцію: {str(e)}")
+            QMessageBox.critical(self, "Помилка", f"Не вдалося згенерувати PDF: {e}")
 
-if __name__ == "__main__":
+
+def main():
     app = QApplication(sys.argv)
     window = ServiceManagerApp()
     window.show()
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
