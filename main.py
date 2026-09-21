@@ -165,17 +165,17 @@ class TrashDialog(QDialog):
             QMessageBox.warning(self, "Увага", "Оберіть замовлення для відновлення!")
             return
 
-        orig_id = self.table.item(selected_row, 0).text()
-        client = self.table.item(selected_row, 1).text()
-        phone = self.table.item(selected_row, 2).text()
-        date_sale = self.table.item(selected_row, 3).text()
-        date_in = self.table.item(selected_row, 4).text()
-        date_out = self.table.item(selected_row, 5).text()
-        item = self.table.item(selected_row, 6).text()
-        serial = self.table.item(selected_row, 7).text()
-        equipment = self.table.item(selected_row, 8).text()
-        issue = self.table.item(selected_row, 9).text()
-        status = self.table.item(selected_row, 10).text()
+        orig_id = self.get_cell_text(selected_row, 0)
+        client = self.get_cell_text(selected_row, 1)
+        phone = self.get_cell_text(selected_row, 2)
+        date_sale = self.get_cell_text(selected_row, 3)
+        date_in = self.get_cell_text(selected_row, 4)
+        date_out = self.get_cell_text(selected_row, 5)
+        item = self.get_cell_text(selected_row, 6)
+        serial = self.get_cell_text(selected_row, 7)
+        equipment = self.get_cell_text(selected_row, 8)
+        issue = self.get_cell_text(selected_row, 9)
+        status = self.get_cell_text(selected_row, 10)
 
         self.cursor.execute("""
             INSERT INTO orders (id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status)
@@ -201,7 +201,7 @@ class TrashDialog(QDialog):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if confirm == QMessageBox.StandardButton.Yes:
-            orig_id = self.table.item(selected_row, 0).text()
+            orig_id = self.get_cell_text(selected_row, 0)
             self.cursor.execute("DELETE FROM deleted_orders WHERE original_id = ?", (orig_id,))
             self.conn.commit()
             self.load_trash()
@@ -216,6 +216,10 @@ class TrashDialog(QDialog):
             self.conn.commit()
             self.load_trash()
 
+    def get_cell_text(self, row, col):
+        item = self.table.item(row, col)
+        return item.text() if item else ""
+
 class ServiceManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -225,7 +229,7 @@ class ServiceManagerApp(QMainWindow):
         self.font_name = setup_cyrillic_font()
         self.logo_path = get_logo_path()
         self.is_loading = False
-        self.selected_photos = []  # Список вибраних фото для поточного замовлення
+        self.selected_photos = []
         
         self.init_db()
         self.init_ui()
@@ -273,7 +277,6 @@ class ServiceManagerApp(QMainWindow):
             )
         """)
 
-        # Таблиця для зберігання шляхів до фото
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS order_photos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -283,10 +286,16 @@ class ServiceManagerApp(QMainWindow):
             )
         """)
         
+        # Автоматична перевірка та міграція колонок
         self.cursor.execute("PRAGMA table_info(orders)")
         columns = [column[1] for column in self.cursor.fetchall()]
         if 'date_sale' not in columns:
             self.cursor.execute("ALTER TABLE orders ADD COLUMN date_sale TEXT")
+
+        self.cursor.execute("PRAGMA table_info(deleted_orders)")
+        del_columns = [column[1] for column in self.cursor.fetchall()]
+        if 'date_sale' not in del_columns:
+            self.cursor.execute("ALTER TABLE deleted_orders ADD COLUMN date_sale TEXT")
 
         self.conn.commit()
 
@@ -295,7 +304,6 @@ class ServiceManagerApp(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        # Верхня панель з логотипом та кнопкою Кошика
         header_layout = QHBoxLayout()
         if self.logo_path:
             logo_label = QLabel()
@@ -416,7 +424,6 @@ class ServiceManagerApp(QMainWindow):
         btn_layout.addWidget(delete_btn)
         main_layout.addLayout(btn_layout)
 
-        # Поле пошуку
         search_layout = QHBoxLayout()
         search_label = QLabel("🔍 Пошук (ПІБ або Телефон):")
         self.search_input = QLineEdit()
@@ -455,7 +462,10 @@ class ServiceManagerApp(QMainWindow):
             QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення з таблиці!")
             return
 
-        order_id = self.table.item(selected_row, 0).text()
+        order_id = self.get_cell_text(selected_row, 0)
+        if not order_id:
+            return
+
         self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (order_id,))
         photos = [row[0] for row in self.cursor.fetchall()]
 
@@ -463,7 +473,6 @@ class ServiceManagerApp(QMainWindow):
         dialog.exec()
 
     def open_trash(self):
-        """Відкриває діалогове вікно кошика."""
         dialog = TrashDialog(self.conn, self)
         dialog.exec()
 
@@ -471,7 +480,6 @@ class ServiceManagerApp(QMainWindow):
         self.date_sale_edit.setEnabled(checked)
 
     def quick_order(self):
-        """Створює нове замовлення прямо в таблиці і відразу додає його в БД."""
         today = QDate.currentDate().toString("yyyy-MM-dd")
         date_out_default = QDate.currentDate().addMonths(3).toString("yyyy-MM-dd")
 
@@ -484,19 +492,16 @@ class ServiceManagerApp(QMainWindow):
         self.load_orders()
         new_row_idx = self.table.rowCount() - 1
         self.table.selectRow(new_row_idx)
-        self.table.editItem(self.table.item(new_row_idx, 1))
 
     def auto_save_cell(self, row, column):
-        """Автоматично оновлює відповідне поле в БД при редагуванні комірки таблиці."""
         if self.is_loading:
             return
 
-        order_id_item = self.table.item(row, 0)
-        if not order_id_item or not order_id_item.text():
+        order_id = self.get_cell_text(row, 0)
+        if not order_id:
             return
 
-        order_id = order_id_item.text()
-        new_value = self.table.item(row, column).text().strip()
+        new_value = self.get_cell_text(row, column)
 
         col_db_map = {
             1: "client_name",
@@ -521,7 +526,6 @@ class ServiceManagerApp(QMainWindow):
                 self.apply_row_highlight(row)
 
     def is_overdue(self, date_in_str, status_str):
-        """Перевіряє, чи замовлення прийняте більше двох тижнів (14 днів) тому і не закрите."""
         if not date_in_str or status_str in ["Готово", "Видано"]:
             return False
 
@@ -533,12 +537,8 @@ class ServiceManagerApp(QMainWindow):
             return False
 
     def apply_row_highlight(self, row_idx):
-        """Підсвічує рядок світло-червоним кольором, якщо замовлення протерміноване (>14 днів)."""
-        date_in_item = self.table.item(row_idx, 4)
-        status_item = self.table.item(row_idx, 10)
-
-        date_in_str = date_in_item.text() if date_in_item else ""
-        status_str = status_item.text() if status_item else ""
+        date_in_str = self.get_cell_text(row_idx, 4)
+        status_str = self.get_cell_text(row_idx, 10)
 
         highlight_color = QColor("#FFCDD2") if self.is_overdue(date_in_str, status_str) else QColor("#FFFFFF")
 
@@ -575,7 +575,6 @@ class ServiceManagerApp(QMainWindow):
         
         order_id = self.cursor.lastrowid
 
-        # Збереження фотографій
         for photo_path in self.selected_photos:
             if os.path.exists(photo_path):
                 ext = os.path.splitext(photo_path)[1]
@@ -603,12 +602,11 @@ class ServiceManagerApp(QMainWindow):
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             for col_idx, value in enumerate(row_data):
-                item = QTableWidgetItem(str(value if value else ""))
+                item = QTableWidgetItem(str(value) if value is not None else "")
                 if col_idx == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
             
-            # Підраховуємо кількість доданих фото
             order_id = row_data[0]
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
@@ -638,7 +636,7 @@ class ServiceManagerApp(QMainWindow):
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             for col_idx, value in enumerate(row_data):
-                item = QTableWidgetItem(str(value if value else ""))
+                item = QTableWidgetItem(str(value) if value is not None else "")
                 if col_idx == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
@@ -654,44 +652,53 @@ class ServiceManagerApp(QMainWindow):
 
         self.is_loading = False
 
+    def get_cell_text(self, row, col):
+        """Безпечно повертає текст з комірки."""
+        item = self.table.item(row, col)
+        return item.text().strip() if item else ""
+
     def fill_form_from_table(self):
+        """Безпечне заповнення форми без падінь при виборі замовлення."""
+        if self.is_loading:
+            return
+
         selected_row = self.table.currentRow()
-        if selected_row >= 0:
-            client_item = self.table.item(selected_row, 1)
-            phone_item = self.table.item(selected_row, 2)
-            item_item = self.table.item(selected_row, 6)
-            
-            if client_item: self.client_input.setText(client_item.text())
-            if phone_item: self.phone_input.setText(phone_item.text())
-            
-            date_sale_item = self.table.item(selected_row, 3)
-            date_sale_str = date_sale_item.text() if date_sale_item else ""
-            if date_sale_str and date_sale_str != "None":
-                self.has_sale_date_checkbox.setChecked(True)
-                self.date_sale_edit.setDate(QDate.fromString(date_sale_str, "yyyy-MM-dd"))
-            else:
-                self.has_sale_date_checkbox.setChecked(False)
+        if selected_row < 0:
+            return
 
-            date_in_item = self.table.item(selected_row, 4)
-            date_in_str = date_in_item.text() if date_in_item else ""
-            if date_in_str:
-                self.date_in_edit.setDate(QDate.fromString(date_in_str, "yyyy-MM-dd"))
-            
-            date_out_item = self.table.item(selected_row, 5)
-            date_out_str = date_out_item.text() if date_out_str else ""
-            if date_out_str:
-                self.date_out_edit.setDate(QDate.fromString(date_out_str, "yyyy-MM-dd"))
+        self.client_input.setText(self.get_cell_text(selected_row, 1))
+        self.phone_input.setText(self.get_cell_text(selected_row, 2))
 
-            if item_item: self.item_input.setText(item_item.text())
-            
-            serial_item = self.table.item(selected_row, 7)
-            if serial_item: self.serial_input.setText(serial_item.text())
-            
-            equipment_item = self.table.item(selected_row, 8)
-            if equipment_item: self.equipment_input.setText(equipment_item.text())
-            
-            issue_item = self.table.item(selected_row, 9)
-            if issue_item: self.issue_input.setText(issue_item.text())
+        date_sale_str = self.get_cell_text(selected_row, 3)
+        if date_sale_str and date_sale_str != "None":
+            self.has_sale_date_checkbox.setChecked(True)
+            d = QDate.fromString(date_sale_str, "yyyy-MM-dd")
+            if d.isValid():
+                self.date_sale_edit.setDate(d)
+        else:
+            self.has_sale_date_checkbox.setChecked(False)
+
+        date_in_str = self.get_cell_text(selected_row, 4)
+        if date_in_str:
+            d = QDate.fromString(date_in_str, "yyyy-MM-dd")
+            if d.isValid():
+                self.date_in_edit.setDate(d)
+        
+        date_out_str = self.get_cell_text(selected_row, 5)
+        if date_out_str:
+            d = QDate.fromString(date_out_str, "yyyy-MM-dd")
+            if d.isValid():
+                self.date_out_edit.setDate(d)
+
+        self.item_input.setText(self.get_cell_text(selected_row, 6))
+        self.serial_input.setText(self.get_cell_text(selected_row, 7))
+        self.equipment_input.setText(self.get_cell_text(selected_row, 8))
+        self.issue_input.setText(self.get_cell_text(selected_row, 9))
+
+        status_str = self.get_cell_text(selected_row, 10)
+        idx = self.status_box.findText(status_str)
+        if idx >= 0:
+            self.status_box.setCurrentIndex(idx)
 
     def clear_fields(self):
         self.client_input.clear()
@@ -709,13 +716,14 @@ class ServiceManagerApp(QMainWindow):
         self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
 
     def delete_order(self):
-        """Переміщує вибране замовлення з таблиці orders у deleted_orders."""
         selected_row = self.table.currentRow()
         if selected_row == -1:
             QMessageBox.warning(self, "Помилка", "Оберіть рядок!")
             return
 
-        order_id = self.table.item(selected_row, 0).text()
+        order_id = self.get_cell_text(selected_row, 0)
+        if not order_id:
+            return
 
         self.cursor.execute("SELECT id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale FROM orders WHERE id = ?", (order_id,))
         row = self.cursor.fetchone()
@@ -741,17 +749,17 @@ class ServiceManagerApp(QMainWindow):
             return
 
         try:
-            order_id = self.table.item(selected_row, 0).text()
-            client = self.table.item(selected_row, 1).text()
-            phone = self.table.item(selected_row, 2).text()
-            date_sale = self.table.item(selected_row, 3).text()
-            date_in = self.table.item(selected_row, 4).text()
-            date_out = self.table.item(selected_row, 5).text()
-            item = self.table.item(selected_row, 6).text()
-            serial = self.table.item(selected_row, 7).text()
-            equipment = self.table.item(selected_row, 8).text()
-            issue = self.table.item(selected_row, 9).text()
-            status = self.table.item(selected_row, 10).text()
+            order_id = self.get_cell_text(selected_row, 0)
+            client = self.get_cell_text(selected_row, 1)
+            phone = self.get_cell_text(selected_row, 2)
+            date_sale = self.get_cell_text(selected_row, 3)
+            date_in = self.get_cell_text(selected_row, 4)
+            date_out = self.get_cell_text(selected_row, 5)
+            item = self.get_cell_text(selected_row, 6)
+            serial = self.get_cell_text(selected_row, 7)
+            equipment = self.get_cell_text(selected_row, 8)
+            issue = self.get_cell_text(selected_row, 9)
+            status = self.get_cell_text(selected_row, 10)
 
             display_date_sale = date_sale if (date_sale and date_sale != "None") else "—"
 
@@ -761,12 +769,10 @@ class ServiceManagerApp(QMainWindow):
             c = canvas.Canvas(pdf_filename, pagesize=landscape(A5))
             width, height = landscape(A5)
 
-            # Зовнішня рамка
             c.setStrokeColor(colors.HexColor("#2C3E50"))
             c.setLineWidth(1.5)
             c.rect(15, 15, width - 30, height - 30)
 
-            # Верхня плашка заголовка
             c.setFillColor(colors.HexColor("#2C3E50"))
             c.rect(15, height - 55, width - 30, 40, fill=1, stroke=0)
 
@@ -785,7 +791,6 @@ class ServiceManagerApp(QMainWindow):
             c.setFont(self.font_name, 9)
             c.drawRightString(width - 30, height - 38, f"Дата прийому: {date_in}")
 
-            # Блок 1: Інформація про Клієнта та Дати
             c.setFillColor(colors.black)
             y = height - 75
 
@@ -799,7 +804,6 @@ class ServiceManagerApp(QMainWindow):
             y -= 20
             c.line(30, y + 12, width - 30, y + 12)
 
-            # Блок 2: Інформація про обладнання та дати
             c.setFont(self.font_name, 10)
             c.drawString(30, y, f"Обладнання / Товар: {item}")
             c.drawString(320, y, f"Серійний №: {serial}")
@@ -815,7 +819,6 @@ class ServiceManagerApp(QMainWindow):
             y -= 15
             c.line(30, y + 8, width - 30, y + 8)
 
-            # Блок 3: Несправність
             y -= 10
             c.setFont(self.font_name, 10)
             c.drawString(30, y, f"Заявлена несправність: {issue}")
@@ -823,7 +826,6 @@ class ServiceManagerApp(QMainWindow):
             y -= 15
             c.line(30, y + 8, width - 30, y + 8)
 
-            # Правила та примітки
             y -= 12
             c.setFont(self.font_name, 7)
             c.setFillColor(colors.HexColor("#555555"))
@@ -838,7 +840,6 @@ class ServiceManagerApp(QMainWindow):
                 text_obj.textLine(line)
             c.drawText(text_obj)
 
-            # Підписи
             y_sig = 40
             c.setFont(self.font_name, 9)
             c.setFillColor(colors.black)
