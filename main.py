@@ -581,7 +581,7 @@ class ServiceManagerApp(QMainWindow):
             if added_count > 0:
                 QMessageBox.information(self, "Успіх", f"Успішно додано {added_count} фото до замовлення №{order_id}!")
             else:
-                QMessageBox.warning(self, "Помилка", "Не вдалося додати обрані файли. Перевірте доступ до файлів.")п до файлів.")id}!")
+                QMessageBox.warning(self, "Помилка", "Не вдалося додати обрані файли. Перевірте доступ до файлів.")
 
     def view_photos(self):
         selected_row = self.table.currentRow()
