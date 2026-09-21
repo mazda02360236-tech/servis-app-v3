@@ -3,7 +3,7 @@ import os
 import sqlite3
 import shutil
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -29,6 +29,9 @@ else:
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
+
+DATE_FORMAT = "dd.MM.yyyy"
+PYTHON_DATE_FORMAT = "%d.%m.%Y"
 
 def setup_cyrillic_font():
     """Використовує системний шрифт Arial для коректного відображення кирилиці в PDF."""
@@ -114,7 +117,7 @@ class TrashDialog(QDialog):
         layout = QVBoxLayout(self)
 
         top_layout = QHBoxLayout()
-        info_label = QLabel("Список видалених замовлень (ви можете відновити їх або видалити назавжди):")
+        info_label = QLabel("Список видалених замовлень:")
         top_layout.addWidget(info_label)
         top_layout.addStretch()
         layout.addLayout(top_layout)
@@ -130,7 +133,7 @@ class TrashDialog(QDialog):
 
         btn_layout = QHBoxLayout()
         
-        restore_btn = QPushButton("♻️ Відновити обране замовлення")
+        restore_btn = QPushButton("♻️ Відновити замовлення")
         restore_btn.setStyleSheet("background-color: #27AE60; color: white; font-weight: bold; padding: 6px;")
         restore_btn.clicked.connect(self.restore_order)
 
@@ -138,7 +141,7 @@ class TrashDialog(QDialog):
         delete_perm_btn.setStyleSheet("background-color: #C0392B; color: white; padding: 6px;")
         delete_perm_btn.clicked.connect(self.delete_permanently)
 
-        clear_all_btn = QPushButton("🧹 Очистити весь кошик")
+        clear_all_btn = QPushButton("🧹 Очистити кошик")
         clear_all_btn.clicked.connect(self.clear_all_trash)
 
         btn_layout.addWidget(restore_btn)
@@ -193,11 +196,11 @@ class TrashDialog(QDialog):
     def delete_permanently(self):
         selected_row = self.table.currentRow()
         if selected_row == -1:
-            QMessageBox.warning(self, "Увага", "Оберіть замовлення для остаточного видалення!")
+            QMessageBox.warning(self, "Увага", "Оберіть замовлення для видалення!")
             return
 
         confirm = QMessageBox.question(
-            self, "Підтвердження", "Ви дійсно хочете остаточно видалити це замовлення? Цю дію неможливо скасувати!",
+            self, "Підтвердження", "Остаточно видалити замовлення?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if confirm == QMessageBox.StandardButton.Yes:
@@ -208,7 +211,7 @@ class TrashDialog(QDialog):
 
     def clear_all_trash(self):
         confirm = QMessageBox.question(
-            self, "Підтвердження", "Очистити весь кошик? Всі видалені замовлення будуть безповоротно втрачені!",
+            self, "Підтвердження", "Очистити весь кошик?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if confirm == QMessageBox.StandardButton.Yes:
@@ -286,7 +289,6 @@ class ServiceManagerApp(QMainWindow):
             )
         """)
         
-        # Автоматична перевірка та міграція колонок
         self.cursor.execute("PRAGMA table_info(orders)")
         columns = [column[1] for column in self.cursor.fetchall()]
         if 'date_sale' not in columns:
@@ -356,15 +358,18 @@ class ServiceManagerApp(QMainWindow):
         self.has_sale_date_checkbox.toggled.connect(self.toggle_sale_date)
         
         self.date_sale_edit = QDateEdit()
+        self.date_sale_edit.setDisplayFormat("dd.MM.yyyy")
         self.date_sale_edit.setDate(QDate.currentDate())
         self.date_sale_edit.setCalendarPopup(True)
         self.date_sale_edit.setEnabled(False)
 
         self.date_in_edit = QDateEdit()
+        self.date_in_edit.setDisplayFormat("dd.MM.yyyy")
         self.date_in_edit.setDate(QDate.currentDate())
         self.date_in_edit.setCalendarPopup(True)
 
         self.date_out_edit = QDateEdit()
+        self.date_out_edit.setDisplayFormat("dd.MM.yyyy")
         self.date_out_edit.setDate(QDate.currentDate().addMonths(3))
         self.date_out_edit.setCalendarPopup(True)
 
@@ -403,7 +408,7 @@ class ServiceManagerApp(QMainWindow):
         quick_order_btn.setStyleSheet("background-color: #27AE60; color: white; font-weight: bold; padding: 6px;")
         quick_order_btn.clicked.connect(self.quick_order)
 
-        save_btn = QPushButton("Зберегти замовлення з форми")
+        save_btn = QPushButton("Зберегти замовлення")
         save_btn.clicked.connect(self.save_order)
         
         view_photo_btn = QPushButton("🖼️ Переглянути фото")
@@ -413,7 +418,7 @@ class ServiceManagerApp(QMainWindow):
         print_btn = QPushButton("Роздрукувати квитанцію (А5)")
         print_btn.clicked.connect(self.print_receipt)
 
-        delete_btn = QPushButton("Видалити замовлення в кошик")
+        delete_btn = QPushButton("Видалити в кошик")
         delete_btn.setStyleSheet("background-color: #E74C3C; color: white;")
         delete_btn.clicked.connect(self.delete_order)
 
@@ -427,7 +432,7 @@ class ServiceManagerApp(QMainWindow):
         search_layout = QHBoxLayout()
         search_label = QLabel("🔍 Пошук (ПІБ або Телефон):")
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Введіть ім'я або номер телефону для фільтрації...")
+        self.search_input.setPlaceholderText("Введіть ім'я або номер телефону...")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self.search_orders)
         
@@ -459,7 +464,7 @@ class ServiceManagerApp(QMainWindow):
     def view_photos(self):
         selected_row = self.table.currentRow()
         if selected_row == -1:
-            QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення з таблиці!")
+            QMessageBox.warning(self, "Увага", "Оберіть замовлення з таблиці!")
             return
 
         order_id = self.get_cell_text(selected_row, 0)
@@ -480,8 +485,9 @@ class ServiceManagerApp(QMainWindow):
         self.date_sale_edit.setEnabled(checked)
 
     def quick_order(self):
-        today = QDate.currentDate().toString("yyyy-MM-dd")
-        date_out_default = QDate.currentDate().addMonths(3).toString("yyyy-MM-dd")
+        """Створення швидкого замовлення з вірним форматом дати (ДД.ММ.РРРР)"""
+        today = QDate.currentDate().toString("dd.MM.yyyy")
+        date_out_default = QDate.currentDate().addMonths(3).toString("dd.MM.yyyy")
 
         self.cursor.execute("""
             INSERT INTO orders (client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status)
@@ -530,7 +536,7 @@ class ServiceManagerApp(QMainWindow):
             return False
 
         try:
-            date_in = datetime.strptime(date_in_str, "%Y-%m-%d").date()
+            date_in = datetime.strptime(date_in_str, PYTHON_DATE_FORMAT).date()
             today = datetime.now().date()
             return (today - date_in).days > 14
         except ValueError:
@@ -552,12 +558,12 @@ class ServiceManagerApp(QMainWindow):
         phone = self.phone_input.text().strip()
         
         if self.has_sale_date_checkbox.isChecked():
-            date_sale = self.date_sale_edit.date().toString("yyyy-MM-dd")
+            date_sale = self.date_sale_edit.date().toString("dd.MM.yyyy")
         else:
             date_sale = ""
 
-        date_in = self.date_in_edit.date().toString("yyyy-MM-dd")
-        date_out = self.date_out_edit.date().toString("yyyy-MM-dd")
+        date_in = self.date_in_edit.date().toString("dd.MM.yyyy")
+        date_out = self.date_out_edit.date().toString("dd.MM.yyyy")
         item = self.item_input.text().strip()
         serial = self.serial_input.text().strip()
         equipment = self.equipment_input.text().strip()
@@ -653,12 +659,10 @@ class ServiceManagerApp(QMainWindow):
         self.is_loading = False
 
     def get_cell_text(self, row, col):
-        """Безпечно повертає текст з комірки."""
         item = self.table.item(row, col)
         return item.text().strip() if item else ""
 
     def fill_form_from_table(self):
-        """Безпечне заповнення форми без падінь при виборі замовлення."""
         if self.is_loading:
             return
 
@@ -672,7 +676,9 @@ class ServiceManagerApp(QMainWindow):
         date_sale_str = self.get_cell_text(selected_row, 3)
         if date_sale_str and date_sale_str != "None":
             self.has_sale_date_checkbox.setChecked(True)
-            d = QDate.fromString(date_sale_str, "yyyy-MM-dd")
+            d = QDate.fromString(date_sale_str, "dd.MM.yyyy")
+            if not d.isValid():
+                d = QDate.fromString(date_sale_str, "yyyy-MM-dd")
             if d.isValid():
                 self.date_sale_edit.setDate(d)
         else:
@@ -680,13 +686,17 @@ class ServiceManagerApp(QMainWindow):
 
         date_in_str = self.get_cell_text(selected_row, 4)
         if date_in_str:
-            d = QDate.fromString(date_in_str, "yyyy-MM-dd")
+            d = QDate.fromString(date_in_str, "dd.MM.yyyy")
+            if not d.isValid():
+                d = QDate.fromString(date_in_str, "yyyy-MM-dd")
             if d.isValid():
                 self.date_in_edit.setDate(d)
         
         date_out_str = self.get_cell_text(selected_row, 5)
         if date_out_str:
-            d = QDate.fromString(date_out_str, "yyyy-MM-dd")
+            d = QDate.fromString(date_out_str, "dd.MM.yyyy")
+            if not d.isValid():
+                d = QDate.fromString(date_out_str, "yyyy-MM-dd")
             if d.isValid():
                 self.date_out_edit.setDate(d)
 
@@ -729,7 +739,7 @@ class ServiceManagerApp(QMainWindow):
         row = self.cursor.fetchone()
 
         if row:
-            deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            deleted_at = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
             self.cursor.execute("""
                 INSERT INTO deleted_orders (original_id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale, deleted_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -743,6 +753,7 @@ class ServiceManagerApp(QMainWindow):
             QMessageBox.information(self, "Кошик", f"Замовлення №{order_id} переміщено в кошик.")
 
     def print_receipt(self):
+        """Формування макету під альбомний А5 (половина аркуша А4)"""
         selected_row = self.table.currentRow()
         if selected_row == -1:
             QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення зі списку таблиці!")
@@ -766,89 +777,88 @@ class ServiceManagerApp(QMainWindow):
             docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
             pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
             
+            # Точні розміри А5 альбомного формату
             c = canvas.Canvas(pdf_filename, pagesize=landscape(A5))
             width, height = landscape(A5)
 
             c.setStrokeColor(colors.HexColor("#2C3E50"))
             c.setLineWidth(1.5)
-            c.rect(15, 15, width - 30, height - 30)
+            c.rect(10, 10, width - 20, height - 20)
 
             c.setFillColor(colors.HexColor("#2C3E50"))
-            c.rect(15, height - 55, width - 30, 40, fill=1, stroke=0)
+            c.rect(10, height - 45, width - 20, 35, fill=1, stroke=0)
 
-            text_x = 30
+            text_x = 20
             if self.logo_path:
                 try:
-                    c.drawImage(self.logo_path, 20, height - 50, width=90, height=30, preserveAspectRatio=True, mask='auto')
-                    text_x = 120
+                    c.drawImage(self.logo_path, 15, height - 42, width=70, height=28, preserveAspectRatio=True, mask='auto')
+                    text_x = 95
                 except Exception:
                     pass
 
             c.setFillColor(colors.white)
-            c.setFont(self.font_name, 13)
-            c.drawString(text_x, height - 38, f"АКТ-КВИТАНЦІЯ ПРИЙОМУ В РЕМОНТ № {order_id}")
+            c.setFont(self.font_name, 11)
+            c.drawString(text_x, height - 30, f"АКТ-КВИТАНЦІЯ ПРИЙОМУ № {order_id}")
             
-            c.setFont(self.font_name, 9)
-            c.drawRightString(width - 30, height - 38, f"Дата прийому: {date_in}")
+            c.setFont(self.font_name, 8)
+            c.drawRightString(width - 20, height - 30, f"Дата прийому: {date_in}")
 
             c.setFillColor(colors.black)
-            y = height - 75
+            y = height - 60
 
             c.setLineWidth(0.5)
             c.setStrokeColor(colors.HexColor("#BDC3C7"))
 
-            c.setFont(self.font_name, 10)
-            c.drawString(30, y, f"Клієнт (ПІБ): {client}")
-            c.drawRightString(width - 30, y, f"Телефон: {phone}")
+            c.setFont(self.font_name, 9)
+            c.drawString(20, y, f"Клієнт (ПІБ): {client}")
+            c.drawRightString(width - 20, y, f"Телефон: {phone}")
             
-            y -= 20
-            c.line(30, y + 12, width - 30, y + 12)
+            y -= 16
+            c.line(20, y + 10, width - 20, y + 10)
 
-            c.setFont(self.font_name, 10)
-            c.drawString(30, y, f"Обладнання / Товар: {item}")
-            c.drawString(320, y, f"Серійний №: {serial}")
+            c.drawString(20, y, f"Товар / Інструмент: {item}")
+            c.drawString(300, y, f"Серійний №: {serial}")
 
-            y -= 20
-            c.drawString(30, y, f"Комплектація: {equipment}")
-            c.drawString(320, y, f"Дата продажу: {display_date_sale}")
+            y -= 16
+            c.drawString(20, y, f"Комплектація: {equipment}")
+            c.drawString(300, y, f"Дата продажу: {display_date_sale}")
 
-            y -= 20
-            c.drawString(30, y, f"Поточний статус: {status}")
-            c.drawString(320, y, f"Планова дата видачі: {date_out}")
-
-            y -= 15
-            c.line(30, y + 8, width - 30, y + 8)
-
-            y -= 10
-            c.setFont(self.font_name, 10)
-            c.drawString(30, y, f"Заявлена несправність: {issue}")
-
-            y -= 15
-            c.line(30, y + 8, width - 30, y + 8)
+            y -= 16
+            c.drawString(20, y, f"Статус: {status}")
+            c.drawString(300, y, f"Планова дата видачі: {date_out}")
 
             y -= 12
-            c.setFont(self.font_name, 7)
-            c.setFillColor(colors.HexColor("#555555"))
+            c.line(20, y + 8, width - 20, y + 8)
+
+            y -= 10
+            c.drawString(20, y, f"Несправність: {issue}")
+
+            y -= 12
+            c.line(20, y + 8, width - 20, y + 8)
+
+            y -= 10
+            c.setFont(self.font_name, 6.5)
+            c.setFillColor(colors.HexColor("#444444"))
             notes = (
-                "1. Видача обладнання здійснюється тільки при наявності даної квитанції.\n"
-                "2. Сервісний центр не несе відповідальності за можливу втрату даних на носіях інформації.\n"
-                "3. Обладнання з виконаним ремонтом зберігається безоплатно протягом 30 днів."
+                "1. Видача здійснюється за наявності даної квитанції.\n"
+                "2. Сервісний центр не відповідає за збереження даних.\n"
+                "3. Готове обладнання зберігається безоплатно протягом 30 днів."
             )
-            text_obj = c.beginText(30, y)
-            text_obj.setLeading(9)
+            text_obj = c.beginText(20, y)
+            text_obj.setLeading(8)
             for line in notes.split('\n'):
                 text_obj.textLine(line)
             c.drawText(text_obj)
 
-            y_sig = 40
-            c.setFont(self.font_name, 9)
+            y_sig = 28
+            c.setFont(self.font_name, 8)
             c.setFillColor(colors.black)
-            c.drawString(30, y_sig, "Замовник: ____________________ (підпис)")
-            c.drawRightString(width - 30, y_sig, "Прийняв: ____________________ (підпис)")
+            c.drawString(20, y_sig, "Замовник: _________________ (підпис)")
+            c.drawRightString(width - 20, y_sig, "Прийняв: _________________ (підпис)")
 
             c.save()
 
-            QMessageBox.information(self, "Успіх", f"Квитанцію А5 сформовано:\n{pdf_filename}")
+            QMessageBox.information(self, "Успіх", f"Квитанцію А5 завантажено:\n{pdf_filename}")
 
             if sys.platform == "win32":
                 os.startfile(pdf_filename)
