@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox, QDialog,
-    QFileDialog, QScrollArea
+    QFileDialog, QScrollArea, QStyledItemDelegate
 )
 from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtGui import QPixmap, QColor
@@ -32,6 +32,23 @@ if not os.path.exists(UPLOAD_DIR):
 
 DATE_FORMAT = "dd.MM.yyyy"
 PYTHON_DATE_FORMAT = "%d.%m.%Y"
+
+def format_date_to_ukr(date_str):
+    """Конвертує дату з форматів YYYY-MM-DD або інших у формат dd.MM.yyyy"""
+    if not date_str or date_str == "None":
+        return ""
+    
+    # Якщо вже в потрібному форматі dd.MM.yyyy
+    d = QDate.fromString(date_str, "dd.MM.yyyy")
+    if d.isValid():
+        return d.toString("dd.MM.yyyy")
+    
+    # Якщо в форматі yyyy-MM-dd (з БД)
+    d = QDate.fromString(date_str, "yyyy-MM-dd")
+    if d.isValid():
+        return d.toString("dd.MM.yyyy")
+        
+    return date_str
 
 def setup_cyrillic_font():
     """Використовує системний шрифт Arial для коректного відображення кирилиці в PDF."""
@@ -70,6 +87,29 @@ def get_logo_path():
             return path
     return None
 
+
+class DateDelegate(QStyledItemDelegate):
+    """Делегат для вибору дати через календар безпосередньо в комірці таблиці"""
+    def createEditor(self, parent, option, index):
+        editor = QDateEdit(parent)
+        editor.setDisplayFormat("dd.MM.yyyy")
+        editor.setCalendarPopup(True)
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.model().data(index, Qt.ItemDataRole.EditRole) or ""
+        d = QDate.fromString(value, "dd.MM.yyyy")
+        if not d.isValid():
+            d = QDate.fromString(value, "yyyy-MM-dd")
+        if not d.isValid():
+            d = QDate.currentDate()
+        editor.setDate(d)
+
+    def setModelData(self, editor, model, index):
+        date_str = editor.date().toString("dd.MM.yyyy")
+        model.setData(index, date_str, Qt.ItemDataRole.EditRole)
+
+
 class PhotoViewerDialog(QDialog):
     """Вікно перегляду доданих фотографій"""
     def __init__(self, photo_paths, parent=None):
@@ -102,6 +142,7 @@ class PhotoViewerDialog(QDialog):
         btn_close.setStyleSheet("padding: 6px; font-weight: bold;")
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
+
 
 class TrashDialog(QDialog):
     """Вікно кошика видалених замовлень"""
@@ -158,7 +199,10 @@ class TrashDialog(QDialog):
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             for col_idx, value in enumerate(row_data):
-                item = QTableWidgetItem(str(value if value else ""))
+                val_str = str(value if value else "")
+                if col_idx in (3, 4, 5):
+                    val_str = format_date_to_ukr(val_str)
+                item = QTableWidgetItem(val_str)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
 
@@ -222,6 +266,7 @@ class TrashDialog(QDialog):
     def get_cell_text(self, row, col):
         item = self.table.item(row, col)
         return item.text() if item else ""
+
 
 class ServiceManagerApp(QMainWindow):
     def __init__(self):
@@ -447,6 +492,13 @@ class ServiceManagerApp(QMainWindow):
             "Товар", "Серійний №", "Комплектація", "Несправність", "Статус", "Фото"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        # Встановлення делегатів вибору дати для колонок дат (3, 4, 5)
+        date_delegate = DateDelegate(self.table)
+        self.table.setItemDelegateForColumn(3, date_delegate)
+        self.table.setItemDelegateForColumn(4, date_delegate)
+        self.table.setItemDelegateForColumn(5, date_delegate)
+
         self.table.itemSelectionChanged.connect(self.fill_form_from_table)
         self.table.cellChanged.connect(self.auto_save_cell)
         main_layout.addWidget(self.table)
@@ -608,7 +660,10 @@ class ServiceManagerApp(QMainWindow):
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             for col_idx, value in enumerate(row_data):
-                item = QTableWidgetItem(str(value) if value is not None else "")
+                val_str = str(value) if value is not None else ""
+                if col_idx in (3, 4, 5):
+                    val_str = format_date_to_ukr(val_str)
+                item = QTableWidgetItem(val_str)
                 if col_idx == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
@@ -642,7 +697,10 @@ class ServiceManagerApp(QMainWindow):
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             for col_idx, value in enumerate(row_data):
-                item = QTableWidgetItem(str(value) if value is not None else "")
+                val_str = str(value) if value is not None else ""
+                if col_idx in (3, 4, 5):
+                    val_str = format_date_to_ukr(val_str)
+                item = QTableWidgetItem(val_str)
                 if col_idx == 0:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
@@ -763,9 +821,9 @@ class ServiceManagerApp(QMainWindow):
             order_id = self.get_cell_text(selected_row, 0)
             client = self.get_cell_text(selected_row, 1)
             phone = self.get_cell_text(selected_row, 2)
-            date_sale = self.get_cell_text(selected_row, 3)
-            date_in = self.get_cell_text(selected_row, 4)
-            date_out = self.get_cell_text(selected_row, 5)
+            date_sale = format_date_to_ukr(self.get_cell_text(selected_row, 3))
+            date_in = format_date_to_ukr(self.get_cell_text(selected_row, 4))
+            date_out = format_date_to_ukr(self.get_cell_text(selected_row, 5))
             item = self.get_cell_text(selected_row, 6)
             serial = self.get_cell_text(selected_row, 7)
             equipment = self.get_cell_text(selected_row, 8)
