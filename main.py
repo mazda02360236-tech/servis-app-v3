@@ -538,7 +538,6 @@ class ServiceManagerApp(QMainWindow):
         except ValueError:
             return
 
-        # Додано підтримку *.JPG, *.PNG, *.WEBP та маску "Усі файли (*.*)"
         files, _ = QFileDialog.getOpenFileNames(
             self, 
             "Оберіть фотографії", 
@@ -555,10 +554,8 @@ class ServiceManagerApp(QMainWindow):
                         new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
                         dest_path = os.path.join(UPLOAD_DIR, new_filename)
                         
-                        # Копіюємо файл у папку uploads
                         shutil.copy(photo_path, dest_path)
                         
-                        # Записуємо в базу даних
                         self.cursor.execute("""
                             INSERT INTO order_photos (order_id, photo_path)
                             VALUES (?, ?)
@@ -570,7 +567,6 @@ class ServiceManagerApp(QMainWindow):
 
             self.conn.commit()
 
-            # Оновлюємо лічильник фотографій з бази даних
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
             
@@ -585,7 +581,7 @@ class ServiceManagerApp(QMainWindow):
             if added_count > 0:
                 QMessageBox.information(self, "Успіх", f"Успішно додано {added_count} фото до замовлення №{order_id}!")
             else:
-                QMessageBox.warning(self, "Помилка", "Не вдалося додати обрані файли. Перевірте доступ до файлів.")id}!")
+                QMessageBox.warning(self, "Помилка", "Не вдалося додати обрані файли. Перевірте доступ до файлів.")п до файлів.")id}!")
 
     def view_photos(self):
         selected_row = self.table.currentRow()
