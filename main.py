@@ -811,7 +811,7 @@ class ServiceManagerApp(QMainWindow):
             QMessageBox.information(self, "Кошик", f"Замовлення №{order_id} переміщено в кошик.")
 
     def print_receipt(self):
-        """Формування макету під альбомний А5 (половина аркуша А4)"""
+        """Формування макету квитанції на пів аркуша А4 (у верхній частині книжкового А4)"""
         selected_row = self.table.currentRow()
         if selected_row == -1:
             QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення зі списку таблиці!")
@@ -835,14 +835,20 @@ class ServiceManagerApp(QMainWindow):
             docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
             pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
             
-            # Точні розміри А5 альбомного формату
-            c = canvas.Canvas(pdf_filename, pagesize=landscape(A5))
-            width, height = landscape(A5)
+            # Використовуємо стандартний формат A4 (portrait / книжкова)
+            from reportlab.lib.pagesizes import A4
+            c = canvas.Canvas(pdf_filename, pagesize=A4)
+            width, height = A4  # width ~ 595.27, height ~ 841.89
 
+            # Верхня половина аркуша A4 відповідає Y від height/2 до height
+            half_height = height / 2
+
+            # Зовнішня рамка для верхньої половини аркуша
             c.setStrokeColor(colors.HexColor("#2C3E50"))
             c.setLineWidth(1.5)
-            c.rect(10, 10, width - 20, height - 20)
+            c.rect(10, half_height + 10, width - 20, half_height - 20)
 
+            # Шапка квитанції
             c.setFillColor(colors.HexColor("#2C3E50"))
             c.rect(10, height - 45, width - 20, 35, fill=1, stroke=0)
 
@@ -858,44 +864,44 @@ class ServiceManagerApp(QMainWindow):
             c.setFont(self.font_name, 11)
             c.drawString(text_x, height - 30, f"АКТ-КВИТАНЦІЯ ПРИЙОМУ № {order_id}")
             
-            c.setFont(self.font_name, 8)
+            c.setFont(self.font_name, 9)
             c.drawRightString(width - 20, height - 30, f"Дата прийому: {date_in}")
 
             c.setFillColor(colors.black)
-            y = height - 60
+            y = height - 65
 
             c.setLineWidth(0.5)
             c.setStrokeColor(colors.HexColor("#BDC3C7"))
 
-            c.setFont(self.font_name, 9)
+            c.setFont(self.font_name, 10)
             c.drawString(20, y, f"Клієнт (ПІБ): {client}")
             c.drawRightString(width - 20, y, f"Телефон: {phone}")
             
-            y -= 16
-            c.line(20, y + 10, width - 20, y + 10)
+            y -= 20
+            c.line(20, y + 12, width - 20, y + 12)
 
             c.drawString(20, y, f"Товар / Інструмент: {item}")
-            c.drawString(300, y, f"Серійний №: {serial}")
+            c.drawString(320, y, f"Серійний №: {serial}")
 
-            y -= 16
+            y -= 20
             c.drawString(20, y, f"Комплектація: {equipment}")
-            c.drawString(300, y, f"Дата продажу: {display_date_sale}")
+            c.drawString(320, y, f"Дата продажу: {display_date_sale}")
 
-            y -= 16
+            y -= 20
             c.drawString(20, y, f"Статус: {status}")
-            c.drawString(300, y, f"Планова дата видачі: {date_out}")
+            c.drawString(320, y, f"Планова дата видачі: {date_out}")
 
-            y -= 12
-            c.line(20, y + 8, width - 20, y + 8)
+            y -= 15
+            c.line(20, y + 10, width - 20, y + 10)
 
-            y -= 10
+            y -= 15
             c.drawString(20, y, f"Несправність: {issue}")
 
-            y -= 12
-            c.line(20, y + 8, width - 20, y + 8)
+            y -= 15
+            c.line(20, y + 10, width - 20, y + 10)
 
-            y -= 10
-            c.setFont(self.font_name, 6.5)
+            y -= 15
+            c.setFont(self.font_name, 7.5)
             c.setFillColor(colors.HexColor("#444444"))
             notes = (
                 "1. Видача здійснюється за наявності даної квитанції.\n"
@@ -903,20 +909,20 @@ class ServiceManagerApp(QMainWindow):
                 "3. Готове обладнання зберігається безоплатно протягом 30 днів."
             )
             text_obj = c.beginText(20, y)
-            text_obj.setLeading(8)
+            text_obj.setLeading(10)
             for line in notes.split('\n'):
                 text_obj.textLine(line)
             c.drawText(text_obj)
 
-            y_sig = 28
-            c.setFont(self.font_name, 8)
+            y_sig = half_height + 30
+            c.setFont(self.font_name, 9)
             c.setFillColor(colors.black)
             c.drawString(20, y_sig, "Замовник: _________________ (підпис)")
             c.drawRightString(width - 20, y_sig, "Прийняв: _________________ (підпис)")
 
             c.save()
 
-            QMessageBox.information(self, "Успіх", f"Квитанцію А5 завантажено:\n{pdf_filename}")
+            QMessageBox.information(self, "Успіх", f"Квитанцію завантажено:\n{pdf_filename}")
 
             if sys.platform == "win32":
                 os.startfile(pdf_filename)
