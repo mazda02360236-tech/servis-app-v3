@@ -719,27 +719,19 @@ class ServiceManagerApp(QMainWindow):
         is_selected = (self.table.currentRow() == row_idx)
         date_in_str = self.get_cell_text(row_idx, 4)
         status_str = self.get_cell_text(row_idx, 10)
-        
-        # Определяем цвета для строки
-        if is_selected:
-            # Цвет для выделенной строки (светло-зеленый с темным текстом)
-            bg_color = QColor("#D4EDDA")
-            text_color = QColor("#155724")
-        elif self.is_overdue(date_in_str, status_str):
-            # Цвет для просроченной строки (светло-красный)
-            bg_color = QColor("#F8D7DA")
-            text_color = QColor("#721C24")
-        else:
-            # Обычный цвет для невыделенной строки
-            bg_color = QColor("#FFFFFF")
-            text_color = QColor("#000000")
 
-        # Применяем цвет ко ВСЕМ ячейкам в строке
+        if is_selected:
+            bg_color = Qt.GlobalColor.white  # Можна налаштувати за бажанням
+        elif self.is_overdue(date_in_str, status_str):
+            bg_color = Qt.GlobalColor.red
+        else:
+            bg_color = Qt.GlobalColor.white
+
+        # Просте оформлення виділення рядка
         for col_idx in range(self.table.columnCount()):
             item = self.table.item(row_idx, col_idx)
-            if item:
-                item.setBackground(bg_color)
-                item.setForeground(text_color)
+            if item and self.is_overdue(date_in_str, status_str) and not is_selected:
+                item.setBackground(Qt.GlobalColor.lightGray)
 
     def save_order(self):
         client = self.client_input.text().strip()
