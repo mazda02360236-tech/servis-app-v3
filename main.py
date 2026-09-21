@@ -522,7 +522,7 @@ class ServiceManagerApp(QMainWindow):
             self.apply_row_highlight(r)
 
     def select_photos(self):
-        """Безпечне додавання фото без закриття програми"""
+        """Безпечне додавання фото з підтримкою будь-яких розширень файлів"""
         selected_row = self.table.currentRow()
         if selected_row == -1:
             QMessageBox.warning(self, "Увага", "Спочатку оберіть замовлення в таблиці!")
@@ -538,8 +538,12 @@ class ServiceManagerApp(QMainWindow):
         except ValueError:
             return
 
+        # Додано підтримку *.JPG, *.PNG, *.WEBP та маску "Усі файли (*.*)"
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Оберіть фотографії", "", "Зображення (*.png *.jpg *.jpeg *.bmp)"
+            self, 
+            "Оберіть фотографії", 
+            "", 
+            "Зображення (*.png *.jpg *.jpeg *.bmp *.webp *.PNG *.JPG *.JPEG *.BMP *.WEBP);;Усі файли (*.*)"
         )
         
         if files:
@@ -551,19 +555,22 @@ class ServiceManagerApp(QMainWindow):
                         new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
                         dest_path = os.path.join(UPLOAD_DIR, new_filename)
                         
+                        # Копіюємо файл у папку uploads
                         shutil.copy(photo_path, dest_path)
                         
+                        # Записуємо в базу даних
                         self.cursor.execute("""
                             INSERT INTO order_photos (order_id, photo_path)
                             VALUES (?, ?)
                         """, (order_id, dest_path))
+                        
                         added_count += 1
                     except Exception as e:
                         print(f"Помилка при збереженні фото: {e}")
 
             self.conn.commit()
 
-            # Оновлюємо лічильник фото в таблиці
+            # Оновлюємо лічильник фотографій з бази даних
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
             
@@ -574,7 +581,11 @@ class ServiceManagerApp(QMainWindow):
             self.is_loading = False
 
             self.lbl_photo_count.setText(f"Обрано: {photo_count}")
-            QMessageBox.information(self, "Успіх", f"Додано {added_count} фото до замовлення №{order_id}!")
+            
+            if added_count > 0:
+                QMessageBox.information(self, "Успіх", f"Успішно додано {added_count} фото до замовлення №{order_id}!")
+            else:
+                QMessageBox.warning(self, "Помилка", "Не вдалося додати обрані файли. Перевірте доступ до файлів.")id}!")
 
     def view_photos(self):
         selected_row = self.table.currentRow()
