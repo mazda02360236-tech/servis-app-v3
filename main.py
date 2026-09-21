@@ -12,13 +12,13 @@ from PyQt6.QtWidgets import (
     QFileDialog, QScrollArea, QStyledItemDelegate
 )
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QPixmap, QColor, QBrush
+from PyQt6.QtGui import QPixmap
 
-from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
 
 # --- ВИЗНАЧЕННЯ БАЗОВОЇ ПАПКИ ТА UPLOAD_DIR В APPDATA ---
 if getattr(sys, 'frozen', False):
@@ -109,37 +109,81 @@ class DateDelegate(QStyledItemDelegate):
 
 
 class PhotoViewerDialog(QDialog):
-    """Перегляд доданих фотографій"""
-    def __init__(self, photo_paths, parent=None):
+    """Перегляд та видалення фотографій"""
+    def __init__(self, order_id, conn, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("🖼️ Прикріплені фотографії")
-        self.resize(650, 500)
+        self.order_id = order_id
+        self.conn = conn
+        self.cursor = self.conn.cursor()
         
-        layout = QVBoxLayout(self)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        content_widget = QWidget()
-        scroll_layout = QVBoxLayout(content_widget)
+        self.setWindowTitle(f"🖼️ Фотографії замовлення №{self.order_id}")
+        self.resize(650, 550)
         
-        if not photo_paths:
-            scroll_layout.addWidget(QLabel("До цього замовлення немає доданих фотографій."))
-        else:
-            for path in photo_paths:
-                if os.path.exists(path):
-                    lbl = QLabel()
-                    pixmap = QPixmap(path)
-                    lbl.setPixmap(pixmap.scaledToWidth(550, Qt.TransformationMode.SmoothTransformation))
-                    scroll_layout.addWidget(lbl)
-                else:
-                    scroll_layout.addWidget(QLabel(f"Файл не знайдено: {path}"))
-                    
-        scroll.setWidget(content_widget)
-        layout.addWidget(scroll)
+        self.init_ui()
+
+    def init_ui(self):
+        self.layout = QVBoxLayout(self)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        
+        self.load_photos_widget()
+        self.layout.addWidget(self.scroll)
         
         btn_close = QPushButton("Закрити")
         btn_close.setStyleSheet("padding: 6px; font-weight: bold;")
         btn_close.clicked.connect(self.accept)
-        layout.addWidget(btn_close)
+        self.layout.addWidget(btn_close)
+
+    def load_photos_widget(self):
+        content_widget = QWidget()
+        scroll_layout = QVBoxLayout(content_widget)
+
+        self.cursor.execute("SELECT id, photo_path FROM order_photos WHERE order_id = ?", (self.order_id,))
+        photos = self.cursor.fetchall()
+
+        if not photos:
+            scroll_layout.addWidget(QLabel("До цього замовлення немає доданих фотографій."))
+        else:
+            for photo_id, path in photos:
+                photo_item_layout = QVBoxLayout()
+                
+                if os.path.exists(path):
+                    lbl = QLabel()
+                    pixmap = QPixmap(path)
+                    lbl.setPixmap(pixmap.scaledToWidth(550, Qt.TransformationMode.SmoothTransformation))
+                    photo_item_layout.addWidget(lbl)
+                else:
+                    photo_item_layout.addWidget(QLabel(f"Файл не знайдено: {path}"))
+
+                btn_delete_photo = QPushButton("🗑️ Видалити фото")
+                btn_delete_photo.setStyleSheet("background-color: #E74C3C; color: white; font-weight: bold; padding: 4px; margin-bottom: 15px;")
+                btn_delete_photo.clicked.connect(lambda _, pid=photo_id, ppath=path: self.delete_photo(pid, ppath))
+                
+                photo_item_layout.addWidget(btn_delete_photo)
+                scroll_layout.addLayout(photo_item_layout)
+
+        self.scroll.setWidget(content_widget)
+
+    def delete_photo(self, photo_id, photo_path):
+        confirm = QMessageBox.question(
+            self, "Підтвердження", "Ви впевнені, що хочете видалити це фото?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            try:
+                self.cursor.execute("DELETE FROM order_photos WHERE id = ?", (photo_id,))
+                self.conn.commit()
+
+                if os.path.exists(photo_path):
+                    os.remove(photo_path)
+
+                self.load_photos_widget()
+
+                if self.parent() and hasattr(self.parent(), 'update_photo_count_for_selected_row'):
+                    self.parent().update_photo_count_for_selected_row()
+
+            except Exception as e:
+                QMessageBox.critical(self, "Помилка", f"Не вдалося видалити фото: {e}")
 
 
 class TrashDialog(QDialog):
@@ -450,7 +494,7 @@ class ServiceManagerApp(QMainWindow):
         save_btn = QPushButton("Зберегти замовлення")
         save_btn.clicked.connect(self.save_order)
         
-        view_photo_btn = QPushButton("🖼️ Переглянути фото")
+        view_photo_btn = QPushButton("🖼️ Переглянути / видалити фото")
         view_photo_btn.setStyleSheet("background-color: #2980B9; color: white; font-weight: bold;")
         view_photo_btn.clicked.connect(self.view_photos)
 
@@ -560,10 +604,27 @@ class ServiceManagerApp(QMainWindow):
                         print(f"Помилка при збереженні фото: {e}")
 
             self.conn.commit()
+            self.update_photo_count_for_selected_row()
+            
+            if added_count > 0:
+                QMessageBox.information(self, "Успіх", f"Успішно додано {added_count} фото до замовлення №{order_id}!")
+            else:
+                QMessageBox.warning(self, "Помилка", "Не вдалося додати обрані файли. Перевірте доступ до файлів.")
 
+    def update_photo_count_for_selected_row(self):
+        selected_row = self.table.currentRow()
+        if selected_row == -1:
+            return
+
+        order_id_str = self.get_cell_text(selected_row, 0)
+        if not order_id_str:
+            return
+
+        try:
+            order_id = int(order_id_str)
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
-            
+
             self.is_loading = True
             photo_item = QTableWidgetItem(f"📷 ({photo_count})")
             photo_item.setFlags(photo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -571,11 +632,8 @@ class ServiceManagerApp(QMainWindow):
             self.is_loading = False
 
             self.lbl_photo_count.setText(f"Обрано: {photo_count}")
-            
-            if added_count > 0:
-                QMessageBox.information(self, "Успіх", f"Успішно додано {added_count} фото до замовлення №{order_id}!")
-            else:
-                QMessageBox.warning(self, "Помилка", "Не вдалося додати обрані файли. Перевірте доступ до файлів.")
+        except ValueError:
+            pass
 
     def view_photos(self):
         selected_row = self.table.currentRow()
@@ -587,10 +645,7 @@ class ServiceManagerApp(QMainWindow):
         if not order_id:
             return
 
-        self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (order_id,))
-        photos = [row[0] for row in self.cursor.fetchall()]
-
-        dialog = PhotoViewerDialog(photos, self)
+        dialog = PhotoViewerDialog(int(order_id), self.conn, self)
         dialog.exec()
 
     def open_trash(self):
@@ -666,16 +721,17 @@ class ServiceManagerApp(QMainWindow):
         status_str = self.get_cell_text(row_idx, 10)
 
         if is_selected:
-            bg_color = QColor("#D4EDDA")
+            bg_color = Qt.GlobalColor.white  # Можна налаштувати за бажанням
         elif self.is_overdue(date_in_str, status_str):
-            bg_color = QColor("#FFCDD2")
+            bg_color = Qt.GlobalColor.red
         else:
-            bg_color = QColor("#FFFFFF")
+            bg_color = Qt.GlobalColor.white
 
+        # Просте оформлення виділення рядка
         for col_idx in range(self.table.columnCount()):
             item = self.table.item(row_idx, col_idx)
-            if item:
-                item.setBackground(bg_color)
+            if item and self.is_overdue(date_in_str, status_str) and not is_selected:
+                item.setBackground(Qt.GlobalColor.lightGray)
 
     def save_order(self):
         client = self.client_input.text().strip()
