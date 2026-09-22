@@ -86,6 +86,50 @@ def get_logo_path():
     return None
 
 
+class CustomSearchLineEdit(QLineEdit):
+    """Поле пошуку із вбудованою червоною кнопкою очищення (хрестиком)"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("QLineEdit { padding-right: 28px; }")
+        
+        self.clear_btn = QPushButton("✕", self)
+        self.clear_btn.setFixedSize(20, 20)
+        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_btn.setToolTip("Очистити пошук")
+        self.clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E74C3C;
+                color: white;
+                border: none;
+                border-radius: 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #C0392B;
+            }
+            QPushButton:pressed {
+                background-color: #962D22;
+            }
+        """)
+        self.clear_btn.hide()
+        self.clear_btn.clicked.connect(self.clear_text)
+        self.textChanged.connect(self.toggle_clear_btn)
+
+    def clear_text(self):
+        self.clear()
+        self.setFocus()
+
+    def toggle_clear_btn(self, text):
+        self.clear_btn.setVisible(bool(text))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        x = self.width() - self.clear_btn.width() - 5
+        y = (self.height() - self.clear_btn.height()) // 2
+        self.clear_btn.move(x, y)
+
+
 class DateDelegate(QStyledItemDelegate):
     """Делегат для вибору дати з календаря в таблиці"""
     def createEditor(self, parent, option, index):
@@ -514,12 +558,12 @@ class ServiceManagerApp(QMainWindow):
         btn_layout.addWidget(delete_btn)
         main_layout.addLayout(btn_layout)
 
-        # --- ОНОВЛЕНИЙ БЛОК ПОШУКУ ---
+        # --- ПОШУК ІЗ ЧЕРВОНОЮ КНОПКОЮ ОЧИЩЕННЯ ---
         search_layout = QHBoxLayout()
         search_label = QLabel("🔍 Пошук (ПІБ, Телефон, Товар/Модель, Серійний №):")
-        self.search_input = QLineEdit()
+        
+        self.search_input = CustomSearchLineEdit()
         self.search_input.setPlaceholderText("Введіть ПІБ, телефон, назву товару чи серійний номер...")
-        self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self.search_orders)
         
         search_layout.addWidget(search_label)
