@@ -514,10 +514,11 @@ class ServiceManagerApp(QMainWindow):
         btn_layout.addWidget(delete_btn)
         main_layout.addLayout(btn_layout)
 
+        # --- ОНОВЛЕНИЙ БЛОК ПОШУКУ ---
         search_layout = QHBoxLayout()
-        search_label = QLabel("🔍 Пошук (ПІБ або Телефон):")
+        search_label = QLabel("🔍 Пошук (ПІБ, Телефон, Товар/Модель, Серійний №):")
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Введіть ім'я або номер телефону...")
+        self.search_input.setPlaceholderText("Введіть ПІБ, телефон, назву товару чи серійний номер...")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self.search_orders)
         
@@ -532,7 +533,6 @@ class ServiceManagerApp(QMainWindow):
             "Товар", "Серійний №", "Комплектація", "Несправність", "Статус", "Фото"
         ])
         
-        # --- НАЛАШТУВАННЯ ВИДІЛЕННЯ ЦІЛОГО РЯДКА ---
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -567,7 +567,6 @@ class ServiceManagerApp(QMainWindow):
             self.apply_row_highlight(r)
 
     def open_photo_dialog_for_id(self, order_id):
-        """Відкриває діалог перегляду фото за ідентифікатором замовлення"""
         if not order_id:
             return
         dialog = PhotoViewerDialog(int(order_id), self.conn, self)
@@ -737,7 +736,7 @@ class ServiceManagerApp(QMainWindow):
             item = self.table.item(row_idx, col_idx)
             if item:
                 if overdue:
-                    item.setBackground(QColor("#FADBD8"))  # Ніжно-червоний колір для прострочених
+                    item.setBackground(QColor("#FADBD8"))
                 else:
                     item.setBackground(QColor("white"))
 
@@ -804,7 +803,6 @@ class ServiceManagerApp(QMainWindow):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
 
-            # --- Випадаючий список статусу в комірці (Колонка 10) ---
             status_combo = QComboBox()
             status_combo.addItems(self.statuses)
             current_status = str(row_data[10]) if row_data[10] is not None else ""
@@ -819,7 +817,6 @@ class ServiceManagerApp(QMainWindow):
             )
             self.table.setCellWidget(row_idx, 10, status_combo)
 
-            # --- Кнопка відкриття фото (Колонка 11) ---
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
 
@@ -831,7 +828,6 @@ class ServiceManagerApp(QMainWindow):
             self.apply_row_highlight(row_idx)
 
     def on_status_combo_changed(self, order_id, new_status, row_idx):
-        """Обробка зміни статусу прямо в таблиці"""
         if self.is_loading:
             return
 
@@ -858,6 +854,7 @@ class ServiceManagerApp(QMainWindow):
         self.is_loading = False
 
     def search_orders(self):
+        """Розширений пошук: ПІБ, Телефон, Товар/Модель, Серійний №"""
         self.is_loading = True
         query = self.search_input.text().strip()
         self.table.setRowCount(0)
@@ -867,9 +864,14 @@ class ServiceManagerApp(QMainWindow):
         else:
             search_pattern = f"%{query}%"
             self.cursor.execute("""
-                SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders 
-                WHERE client_name LIKE ? OR phone LIKE ? ORDER BY id DESC
-            """, (search_pattern, search_pattern))
+                SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status 
+                FROM orders 
+                WHERE client_name LIKE ? 
+                   OR phone LIKE ? 
+                   OR item_name LIKE ? 
+                   OR serial_num LIKE ? 
+                ORDER BY id DESC
+            """, (search_pattern, search_pattern, search_pattern, search_pattern))
             
         rows = self.cursor.fetchall()
         self.populate_table_rows(rows)
