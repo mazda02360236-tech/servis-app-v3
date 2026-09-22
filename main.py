@@ -504,6 +504,7 @@ class ServiceManagerApp(QMainWindow):
 
         self.status_box = QComboBox()
         self.status_box.addItems(self.statuses)
+        self.status_box.currentTextChanged.connect(self.on_form_status_changed)
 
         r3.addWidget(self.has_sale_date_checkbox)
         r3.addWidget(self.date_sale_edit)
@@ -558,7 +559,6 @@ class ServiceManagerApp(QMainWindow):
         btn_layout.addWidget(delete_btn)
         main_layout.addLayout(btn_layout)
 
-        # --- ПОШУК ІЗ ЧЕРВОНОЮ КНОПКОЮ ОЧИЩЕННЯ ---
         search_layout = QHBoxLayout()
         search_label = QLabel("🔍 Пошук (ПІБ, Телефон, Товар/Модель, Серійний №):")
         
@@ -599,6 +599,12 @@ class ServiceManagerApp(QMainWindow):
         main_layout.addWidget(self.table)
 
         self.load_orders()
+
+    def on_form_status_changed(self, text):
+        if self.is_loading:
+            return
+        if text == "Видано":
+            self.date_out_edit.setDate(QDate.currentDate())
 
     def on_row_selected(self):
         if self.is_loading:
@@ -875,8 +881,20 @@ class ServiceManagerApp(QMainWindow):
         if self.is_loading:
             return
 
-        self.cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
-        self.conn.commit()
+        if new_status == "Видано":
+            today_str = QDate.currentDate().toString("dd.MM.yyyy")
+            self.cursor.execute("UPDATE orders SET status = ?, date_out = ? WHERE id = ?", (new_status, today_str, order_id))
+            self.conn.commit()
+
+            item_date = self.table.item(row_idx, 5)
+            if item_date:
+                item_date.setText(today_str)
+
+            if self.table.currentRow() == row_idx:
+                self.date_out_edit.setDate(QDate.currentDate())
+        else:
+            self.cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
+            self.conn.commit()
 
         item = self.table.item(row_idx, 10)
         if item:
@@ -887,7 +905,9 @@ class ServiceManagerApp(QMainWindow):
         if self.table.currentRow() == row_idx:
             idx = self.status_box.findText(new_status)
             if idx >= 0:
+                self.status_box.blockSignals(True)
                 self.status_box.setCurrentIndex(idx)
+                self.status_box.blockSignals(False)
 
     def load_orders(self):
         self.is_loading = True
@@ -975,14 +995,16 @@ class ServiceManagerApp(QMainWindow):
         status_str = self.get_cell_text(selected_row, 10)
         idx = self.status_box.findText(status_str)
         if idx >= 0:
+            self.status_box.blockSignals(True)
             self.status_box.setCurrentIndex(idx)
+            self.status_box.blockSignals(False)
 
         order_id = self.get_cell_text(selected_row, 0)
         if order_id:
             try:
                 self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (int(order_id),))
                 count = self.cursor.fetchone()[0]
-                self.lbl_photo_count.setText(f"Обрано: {count}")
+                self.lbl_photo_count.setText(f"Обрано: 0" if count == 0 else f"Обрано: {count}")
             except Exception:
                 self.lbl_photo_count.setText("Обрано: 0")
 
