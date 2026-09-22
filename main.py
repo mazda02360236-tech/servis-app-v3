@@ -786,7 +786,7 @@ class ServiceManagerApp(QMainWindow):
         bg_color = QColor("white")
         combo_style = ""
 
-        if status_str == "Готово":
+        if status_str in ["Готово", "Видано"]:
             bg_color = QColor("#D6EAF8")  # Світло-синій
             combo_style = "QComboBox { background-color: #D6EAF8; border: 1px solid #7FB3D5; padding: 2px; font-weight: bold; }"
         elif overdue:
