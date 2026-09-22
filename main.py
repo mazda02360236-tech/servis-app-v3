@@ -778,17 +778,29 @@ class ServiceManagerApp(QMainWindow):
             return False
 
     def apply_row_highlight(self, row_idx):
+        """Підсвічування рядка та випадаючого списку відповідно до статусу та термінів"""
         date_in_str = self.get_cell_text(row_idx, 4)
         status_str = self.get_cell_text(row_idx, 10)
         overdue = self.is_overdue(date_in_str, status_str)
 
+        bg_color = QColor("white")
+        combo_style = ""
+
+        if status_str == "Готово":
+            bg_color = QColor("#D6EAF8")  # Світло-синій
+            combo_style = "QComboBox { background-color: #D6EAF8; border: 1px solid #7FB3D5; padding: 2px; font-weight: bold; }"
+        elif overdue:
+            bg_color = QColor("#FADBD8")  # Світло-червоний для протермінованих
+            combo_style = "QComboBox { background-color: #FADBD8; border: 1px solid #F5B7B1; padding: 2px; font-weight: bold; }"
+
         for col_idx in range(self.table.columnCount()):
             item = self.table.item(row_idx, col_idx)
             if item:
-                if overdue:
-                    item.setBackground(QColor("#FADBD8"))
-                else:
-                    item.setBackground(QColor("white"))
+                item.setBackground(bg_color)
+
+        widget = self.table.cellWidget(row_idx, 10)
+        if isinstance(widget, QComboBox):
+            widget.setStyleSheet(combo_style)
 
     def save_order(self):
         client = self.client_input.text().strip()
