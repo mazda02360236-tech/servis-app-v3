@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox, QDialog,
     QFileDialog, QScrollArea, QStyledItemDelegate
 )
-from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtCore import QDate, Qt, QEvent
 from PyQt6.QtGui import QPixmap, QColor
 
 from reportlab.pdfgen import canvas
@@ -431,6 +431,9 @@ class ServiceManagerApp(QMainWindow):
         self.conn.commit()
 
     def init_ui(self):
+        # Увімкнення Drag & Drop для вікна
+        self.setAcceptDrops(True)
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
@@ -581,6 +584,12 @@ class ServiceManagerApp(QMainWindow):
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
+        # Налаштування Drag & Drop для таблиці
+        self.table.setAcceptDrops(True)
+        self.table.viewport().setAcceptDrops(True)
+        self.table.installEventFilter(self)
+        self.table.viewport().installEventFilter(self)
+
         date_delegate = DateDelegate(self.table)
         self.table.setItemDelegateForColumn(3, date_delegate)
         self.table.setItemDelegateForColumn(4, date_delegate)
@@ -599,6 +608,114 @@ class ServiceManagerApp(QMainWindow):
         main_layout.addWidget(self.table)
 
         self.load_orders()
+
+    # --- МЕТОДИ DRAG & DROP ДЛЯ ДОДАВАННЯ ФОТОЗНІМКІВ ---
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls() or event.mimeData().hasImage():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls() or event.mimeData().hasImage():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        self.handle_drop_event(event)
+
+    def eventFilter(self, source, event):
+        if source in (self.table, self.table.viewport()):
+            if event.type() in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
+                if event.mimeData().hasUrls() or event.mimeData().hasImage():
+                    event.acceptProposedAction()
+                    return True
+            elif event.type() == QEvent.Type.Drop:
+                self.handle_drop_event(event, source)
+                event.acceptProposedAction()
+                return True
+        return super().eventFilter(source, event)
+
+    def add_photo_to_order(self, order_id, photo_path):
+        try:
+            ext = os.path.splitext(photo_path)[1]
+            if not ext:
+                ext = ".png"
+            new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
+            dest_path = os.path.join(UPLOAD_DIR, new_filename)
+            shutil.copy2(photo_path, dest_path)
+            
+            self.cursor.execute("""
+                INSERT INTO order_photos (order_id, photo_path)
+                VALUES (?, ?)
+            """, (order_id, dest_path))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Помилка при збереженні фото: {e}")
+            return False
+
+    def handle_drop_event(self, event, source=None):
+        row = -1
+        if source == self.table.viewport():
+            pos = event.position().toPoint()
+            item = self.table.itemAt(pos)
+            if item:
+                row = item.row()
+
+        if row == -1:
+            row = self.table.currentRow()
+
+        if row == -1:
+            QMessageBox.warning(self, "Увага", "Оберіть замовлення в таблиці або перетягніть фото безпосередньо на рядок замовлення!")
+            return
+
+        order_id_str = self.get_cell_text(row, 0)
+        if not order_id_str:
+            QMessageBox.warning(self, "Увага", "Неможливо додати фото до незбереженого замовлення!")
+            return
+
+        try:
+            order_id = int(order_id_str)
+        except ValueError:
+            return
+
+        added_count = 0
+        mime = event.mimeData()
+        valid_exts = ('.png', '.jpg', '.jpeg', '.bmp', '.webp')
+
+        # 1. Перетягування файлів або URL-адрес (з робочого столу, Viber, завантажень)
+        if mime.hasUrls():
+            for url in mime.urls():
+                file_path = url.toLocalFile()
+                if file_path and os.path.exists(file_path):
+                    if file_path.lower().endswith(valid_exts):
+                        if self.add_photo_to_order(order_id, file_path):
+                            added_count += 1
+
+        # 2. Пряме перетягування растрового зображення (з Viber/браузера)
+        if added_count == 0 and mime.hasImage():
+            q_img = mime.imageData()
+            if q_img:
+                pixmap = QPixmap(q_img) if not isinstance(q_img, QPixmap) else q_img
+                if not pixmap.isNull():
+                    new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+                    dest_path = os.path.join(UPLOAD_DIR, new_filename)
+                    if pixmap.save(dest_path, "PNG"):
+                        self.cursor.execute("""
+                            INSERT INTO order_photos (order_id, photo_path)
+                            VALUES (?, ?)
+                        """, (order_id, dest_path))
+                        self.conn.commit()
+                        added_count += 1
+
+        if added_count > 0:
+            self.table.selectRow(row)
+            self.update_photo_count_for_selected_row()
+            QMessageBox.information(self, "Успіх", f"Успішно додано {added_count} фото до замовлення №{order_id}!")
+        else:
+            QMessageBox.warning(self, "Помилка", "Не вдалося розпізнати фотографію серед перетягнутих даних.")
 
     def on_form_status_changed(self, text):
         if self.is_loading:
@@ -649,23 +766,9 @@ class ServiceManagerApp(QMainWindow):
             added_count = 0
             for photo_path in files:
                 if os.path.exists(photo_path):
-                    try:
-                        ext = os.path.splitext(photo_path)[1]
-                        new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
-                        dest_path = os.path.join(UPLOAD_DIR, new_filename)
-                        
-                        shutil.copy2(photo_path, dest_path)
-                        
-                        self.cursor.execute("""
-                            INSERT INTO order_photos (order_id, photo_path)
-                            VALUES (?, ?)
-                        """, (order_id, dest_path))
-                        
+                    if self.add_photo_to_order(order_id, photo_path):
                         added_count += 1
-                    except Exception as e:
-                        print(f"Помилка при збереженні фото: {e}")
 
-            self.conn.commit()
             self.update_photo_count_for_selected_row()
             
             if added_count > 0:
@@ -835,17 +938,7 @@ class ServiceManagerApp(QMainWindow):
 
         for photo_path in self.selected_photos:
             if os.path.exists(photo_path):
-                try:
-                    ext = os.path.splitext(photo_path)[1]
-                    new_filename = f"order_{order_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
-                    dest_path = os.path.join(UPLOAD_DIR, new_filename)
-                    shutil.copy2(photo_path, dest_path)
-                    self.cursor.execute("""
-                        INSERT INTO order_photos (order_id, photo_path)
-                        VALUES (?, ?)
-                    """, (order_id, dest_path))
-                except Exception as e:
-                    print(f"Помилка при збереженні: {e}")
+                self.add_photo_to_order(order_id, photo_path)
 
         self.conn.commit()
 
