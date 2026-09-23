@@ -1,71 +1,86 @@
-import sys
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import (
-    QApplication,
-    QHeaderView,
-    QMainWindow,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+import json
+import os
+import tkinter as tk
+from tkinter import ttk
 
 
-class ServiceCenterApp(QMainWindow):
+class ServiceCenterApp:
 
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Управління замовленнями сервісного центру")
-        self.resize(1150, 600)
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Управління замовленнями сервісного центру")
+        self.root.geometry("1100x600")
 
-        # Налаштування сховища параметрів (QSettings)
-        self.settings = QSettings("ServiceCenterApp", "OrderTableSettings")
+        self.config_file = "table_config.json"
+
+        # Колонки таблиці
+        self.columns = (
+            "num",
+            "date",
+            "client",
+            "phone",
+            "device",
+            "issue",
+            "status",
+            "price",
+        )
+        self.headers = {
+            "num": "№ Замовлення",
+            "date": "Дата",
+            "client": "Клієнт",
+            "phone": "Телефон",
+            "device": "Пристрій",
+            "issue": "Несправність",
+            "status": "Статус",
+            "price": "Сума (грн)",
+        }
+
+        # Стандартні розміри колонок за замовчуванням
+        self.default_widths = {
+            "num": 100,
+            "date": 100,
+            "client": 150,
+            "phone": 130,
+            "device": 140,
+            "issue": 230,
+            "status": 110,
+            "price": 100,
+        }
 
         self.init_ui()
-        # Завантажуємо збережені розміри після створення UI
-        self.load_table_layout()
+        self.load_column_widths()
+
+        # Збереження розмірів при відпусканні миші або закритті вікна
+        self.tree.bind("<ButtonRelease-1>", self.save_column_widths)
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def init_ui(self):
-        central_widget = QWidget()
-        layout = QVBoxLayout(central_widget)
-
         # Створення таблиці
-        self.table = QTableWidget()
+        self.tree = ttk.Treeview(
+            self.root, columns=self.columns, show="headings"
+        )
 
-        # Колонки таблиці замовлень
-        headers = [
-            "№ Замовлення",
-            "Дата",
-            "Клієнт",
-            "Телефон",
-            "Пристрій",
-            "Несправність",
-            "Статус",
-            "Сума (грн)",
-        ]
-        self.table.setColumnCount(len(headers))
-        self.table.setHorizontalHeaderLabels(headers)
+        for col in self.columns:
+            self.tree.heading(col, text=self.headers[col])
+            self.tree.column(
+                col, width=self.default_widths[col], anchor="center"
+            )
 
-        # Отримуємо заголовки таблиці
-        h_header = self.table.horizontalHeader()
-        v_header = self.table.verticalHeader()
+        # Скроллбар
+        scrollbar = ttk.Scrollbar(
+            self.root, orient="vertical", command=self.tree.yview
+        )
+        self.tree.configure(yscrollcommand=scrollbar.set)
 
-        # Вмикаємо інтерактивний режим зміни розмірів для користувача
-        h_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        v_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.tree.pack(
+            side="left", fill="both", expand=True, padx=10, pady=10
+        )
+        scrollbar.pack(side="right", fill="y", pady=10)
 
-        # Підключаємо автозбереження при кожному перетягуванні межі колонки або рядка
-        h_header.sectionResized.connect(self.save_table_layout)
-        v_header.sectionResized.connect(self.save_table_layout)
-
-        # Додавання тестових даних
         self.add_sample_data()
 
-        layout.addWidget(self.table)
-        self.setCentralWidget(central_widget)
-
     def add_sample_data(self):
-        sample_orders = [
+        sample_data = [
             (
                 "1001",
                 "23.09.2026",
@@ -82,41 +97,44 @@ class ServiceCenterApp(QMainWindow):
                 "Марія Сидорова",
                 "+380509876543",
                 "MacBook Air M1",
-                "Чистка після потрапляння рідини",
-                "Диагностика",
+                "Чистка після рідини",
+                "Діагностика",
                 "1800",
             ),
         ]
+        for row in sample_data:
+            self.tree.insert("", "end", values=row)
 
-        self.table.setRowCount(len(sample_orders))
-        for row, order in enumerate(sample_orders):
-            for col, value in enumerate(order):
-                item = QTableWidgetItem(value)
-                if col in [0, 1, 7]:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.table.setItem(row, col, item)
+    def save_column_widths(self, event=None):
+        """Зберігає поточну ширину всіх колонок у JSON файл."""
+        widths = {}
+        for col in self.columns:
+            widths[col] = self.tree.column(col, "width")
 
-    def save_table_layout(self):
-        """Автоматично зберігає стан ширини колонок та висоти рядків."""
-        h_state = self.table.horizontalHeader().saveState()
-        v_state = self.table.verticalHeader().saveState()
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(widths, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
 
-        self.settings.setValue("table/h_state", h_state)
-        self.settings.setValue("table/v_state", v_state)
+    def load_column_widths(self):
+        """Завантажує збережені розміри колонок при запуску."""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    widths = json.load(f)
+                    for col, width in widths.items():
+                        if col in self.columns:
+                            self.tree.column(col, width=int(width))
+            except Exception:
+                pass
 
-    def load_table_layout(self):
-        """Відновлює збережений стан колонок та рядків при запуску."""
-        h_state = self.settings.value("table/h_state")
-        v_state = self.settings.value("table/v_state")
-
-        if h_state:
-            self.table.horizontalHeader().restoreState(h_state)
-        if v_state:
-            self.table.verticalHeader().restoreState(v_state)
+    def on_close(self):
+        self.save_column_widths()
+        self.root.destroy()
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = ServiceCenterApp()
-    window.show()
-    sys.exit(app.exec())
+    root = tk.Tk()
+    app = ServiceCenterApp(root)
+    root.mainloop()
