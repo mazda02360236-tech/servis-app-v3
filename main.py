@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox, QDialog,
-    QFileDialog, QScrollArea, QStyledItemDelegate
+    QFileDialog, QScrollArea, QStyledItemDelegate, QGroupBox, QFormLayout
 )
 from PyQt6.QtCore import QDate, Qt, QEvent
 from PyQt6.QtGui import QPixmap, QColor
@@ -84,6 +84,168 @@ def get_logo_path():
         if os.path.exists(path):
             return path
     return None
+
+
+class OrderDetailsDialog(QDialog):
+    """Повний перегляд замовлення на одному листку (Картка замовлення)"""
+    def __init__(self, order_id, conn, parent=None):
+        super().__init__(parent)
+        self.order_id = order_id
+        self.conn = conn
+        self.cursor = self.conn.cursor()
+
+        self.setWindowTitle(f"📋 Картка замовлення №{self.order_id}")
+        self.resize(700, 680)
+        self.init_ui()
+
+    def init_ui(self):
+        main_layout = QVBoxLayout(self)
+
+        self.cursor.execute("""
+            SELECT client_name, phone, date_sale, date_in, date_out,
+                   item_name, serial_num, equipment, issue, status
+            FROM orders WHERE id = ?
+        """, (self.order_id,))
+        row = self.cursor.fetchone()
+
+        if not row:
+            main_layout.addWidget(QLabel("Замовлення не знайдено."))
+            return
+
+        client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status = row
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+
+        # Шапка картки
+        header_layout = QHBoxLayout()
+        title = QLabel(f"ЗАМОВЛЕННЯ № {self.order_id}")
+        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2C3E50;")
+
+        status_bg = "#2980B9"
+        if status == "Готово":
+            status_bg = "#F1C40F"
+        elif status == "Видано":
+            status_bg = "#27AE60"
+
+        status_lbl = QLabel(f"Статус: {status}")
+        status_lbl.setStyleSheet(f"""
+            font-size: 13px;
+            font-weight: bold;
+            padding: 5px 12px;
+            border-radius: 4px;
+            background-color: {status_bg};
+            color: white;
+        """)
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+        header_layout.addWidget(status_lbl)
+        layout.addLayout(header_layout)
+
+        # Блок: Клієнт
+        gb_client = QGroupBox("👤 Інформація про клієнта")
+        fl_client = QFormLayout(gb_client)
+        fl_client.addRow("ПІБ Клієнта:", QLabel(client or "—"))
+        fl_client.addRow("Телефон:", QLabel(phone or "—"))
+        layout.addWidget(gb_client)
+
+        # Блок: Інструмент
+        gb_item = QGroupBox("🛠️ Обладнання / Інструмент")
+        fl_item = QFormLayout(gb_item)
+        fl_item.addRow("Товар / Модель:", QLabel(item or "—"))
+        fl_item.addRow("Серійний номер:", QLabel(serial or "—"))
+        fl_item.addRow("Комплектація:", QLabel(equipment or "—"))
+        layout.addWidget(gb_item)
+
+        # Блок: Дати
+        gb_dates = QGroupBox("📅 Дати")
+        fl_dates = QFormLayout(gb_dates)
+        fl_dates.addRow("Дата продажу:", QLabel(format_date_to_ukr(date_sale) if date_sale else "—"))
+        fl_dates.addRow("Дата прийому:", QLabel(format_date_to_ukr(date_in)))
+        fl_dates.addRow("Дата видачі:", QLabel(format_date_to_ukr(date_out)))
+        layout.addWidget(gb_dates)
+
+        # Блок: Несправність
+        gb_issue = QGroupBox("⚠️ Опис несправності")
+        l_issue = QVBoxLayout(gb_issue)
+        lbl_issue_text = QLabel(issue or "Опис відсутній")
+        lbl_issue_text.setWordWrap(True)
+        lbl_issue_text.setStyleSheet("font-size: 13px; color: #C0392B; font-weight: bold;")
+        l_issue.addWidget(lbl_issue_text)
+        layout.addWidget(gb_issue)
+
+        # Блок: Фотографії
+        self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (self.order_id,))
+        photos = self.cursor.fetchall()
+
+        gb_photos = QGroupBox(f"🖼️ Прикріплені фотографії ({len(photos)})")
+        l_photos = QVBoxLayout(gb_photos)
+
+        if photos:
+            photos_scroll = QScrollArea()
+            photos_scroll.setFixedHeight(170)
+            photos_scroll.setWidgetResizable(True)
+            photos_widget = QWidget()
+            ph_layout = QHBoxLayout(photos_widget)
+
+            for (p_path,) in photos:
+                if os.path.exists(p_path):
+                    pix = QPixmap(p_path)
+                    lbl_p = QLabel()
+                    lbl_p.setPixmap(pix.scaledToHeight(130, Qt.TransformationMode.SmoothTransformation))
+                    lbl_p.setStyleSheet("border: 1px solid #CBD5E1; border-radius: 4px; padding: 2px;")
+                    ph_layout.addWidget(lbl_p)
+
+            photos_scroll.setWidget(photos_widget)
+            l_photos.addWidget(photos_scroll)
+        else:
+            l_photos.addWidget(QLabel("До цього замовлення не додано фотографій."))
+
+        layout.addWidget(gb_photos)
+
+        content.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 13px;
+                border: 1px solid #BDC3C7;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding-top: 12px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+            QLabel {
+                font-size: 13px;
+            }
+        """)
+
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
+
+        # Нижній блок кнопок
+        btn_layout = QHBoxLayout()
+        
+        btn_print = QPushButton("🖨️ Друк квитанції (А5)")
+        btn_print.setStyleSheet("background-color: #27AE60; color: white; font-weight: bold; padding: 6px 12px;")
+        btn_print.clicked.connect(self.print_receipt)
+
+        btn_close = QPushButton("Закрити")
+        btn_close.setStyleSheet("padding: 6px 16px; font-weight: bold;")
+        btn_close.clicked.connect(self.accept)
+
+        btn_layout.addWidget(btn_print)
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_close)
+        main_layout.addLayout(btn_layout)
+
+    def print_receipt(self):
+        if self.parent() and hasattr(self.parent(), 'print_receipt'):
+            self.parent().print_receipt()
 
 
 class CustomSearchLineEdit(QLineEdit):
@@ -584,6 +746,9 @@ class ServiceManagerApp(QMainWindow):
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
+        # Обробка події подвійного кліку по ячейці (для колонки ID)
+        self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
+
         # Налаштування Drag & Drop для таблиці
         self.table.setAcceptDrops(True)
         self.table.viewport().setAcceptDrops(True)
@@ -608,6 +773,17 @@ class ServiceManagerApp(QMainWindow):
         main_layout.addWidget(self.table)
 
         self.load_orders()
+
+    def on_cell_double_clicked(self, row, column):
+        """Відкриває картку замовлення при подвійному натисканні на колонку ID (0)"""
+        if column == 0:
+            order_id_str = self.get_cell_text(row, 0)
+            if order_id_str:
+                try:
+                    dialog = OrderDetailsDialog(int(order_id_str), self.conn, self)
+                    dialog.exec()
+                except ValueError:
+                    pass
 
     # --- МЕТОДИ DRAG & DROP ДЛЯ ДОДАВАННЯ ФОТОЗНІМКІВ ---
     def dragEnterEvent(self, event):
@@ -685,7 +861,6 @@ class ServiceManagerApp(QMainWindow):
         mime = event.mimeData()
         valid_exts = ('.png', '.jpg', '.jpeg', '.bmp', '.webp')
 
-        # 1. Перетягування файлів або URL-адрес (з робочого столу, Viber, завантажень)
         if mime.hasUrls():
             for url in mime.urls():
                 file_path = url.toLocalFile()
@@ -694,7 +869,6 @@ class ServiceManagerApp(QMainWindow):
                         if self.add_photo_to_order(order_id, file_path):
                             added_count += 1
 
-        # 2. Пряме перетягування растрового зображення (з Viber/браузера)
         if added_count == 0 and mime.hasImage():
             q_img = mime.imageData()
             if q_img:
@@ -890,13 +1064,13 @@ class ServiceManagerApp(QMainWindow):
         combo_style = ""
 
         if status_str == "Готово":
-            bg_color = QColor("#FFF2CC")  # Світло-жовтий
+            bg_color = QColor("#FFF2CC")
             combo_style = "QComboBox { background-color: #FFF2CC; border: 1px solid #F1C40F; padding: 2px; font-weight: bold; }"
         elif status_str == "Видано":
-            bg_color = QColor("#D6EAF8")  # Світло-синій
+            bg_color = QColor("#D6EAF8")
             combo_style = "QComboBox { background-color: #D6EAF8; border: 1px solid #7FB3D5; padding: 2px; font-weight: bold; }"
         elif overdue:
-            bg_color = QColor("#FADBD8")  # Світло-червоний для протермінованих
+            bg_color = QColor("#FADBD8")
             combo_style = "QComboBox { background-color: #FADBD8; border: 1px solid #F5B7B1; padding: 2px; font-weight: bold; }"
 
         for col_idx in range(self.table.columnCount()):
