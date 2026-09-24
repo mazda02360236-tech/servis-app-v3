@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QAbstractItemView, QDateEdit, QToolButton
 )
 from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QColor, QFont, QIcon, QPixmap
+from PyQt6.QtGui import QColor, QFont, QIcon, QPixmap, QDragEnterEvent, QDropEvent
 
 # --- Підключення ReportLab для формування PDF ---
 from reportlab.lib.pagesizes import A4
@@ -463,7 +463,6 @@ class ServiceManagerApp(QMainWindow):
         cursor.execute("SELECT * FROM service_orders")
         orders = cursor.fetchall()
 
-        # Покращений ключ сортування за вашою вимовою
         def get_order_priority(order):
             order_id = order[0]
             status = str(order[5]) if order[5] else ""
@@ -482,15 +481,14 @@ class ServiceManagerApp(QMainWindow):
                 except Exception:
                     pass
 
-            # Визначення пріоритетів:
             if is_overdue:
-                priority = 0  # 1. Прострочені (Червоний) -> НА САМИЙ ПОЧАТОК
+                priority = 0  # 1. Прострочені (Червоний)
             elif status == "Готово":
-                priority = 1  # 2. Готово (Зелений) -> ПІСЛЯ ЧЕРВОНИХ
+                priority = 1  # 2. Готово (Зелений)
             elif status != "Видано":
-                priority = 2  # 3. В роботі / Інші (Стандартні)
+                priority = 2  # 3. В роботі
             else:
-                priority = 3  # 4. Видано (Синій/Сірий) -> ОПУСКАЮТЬСЯ В КІНЕЦЬ
+                priority = 3  # 4. Видано (Синій/Сірий)
 
             return (priority, -order_id)
 
@@ -503,7 +501,6 @@ class ServiceManagerApp(QMainWindow):
             status = order[5]
             date_accepted_str = order[6]
 
-            # Перевірка на прострочення для підсвітки
             is_overdue = False
             if status not in ("Готово", "Видано") and date_accepted_str:
                 try:
@@ -516,7 +513,6 @@ class ServiceManagerApp(QMainWindow):
                 except Exception:
                     pass
 
-            # Вибір кольору підсвічування
             bg_color = None
             if is_overdue:
                 bg_color = QColor(255, 200, 200)  # Червоний
@@ -530,7 +526,6 @@ class ServiceManagerApp(QMainWindow):
                 if bg_color:
                     item.setBackground(bg_color)
                 
-                # ID не можна редагувати безпосередньо у таблиці
                 if col_idx == 0:
                     item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
 
@@ -579,7 +574,6 @@ class ServiceManagerApp(QMainWindow):
         """, (client, phone, model, serial, status, date_acc, date_sale, issue, cost, notes))
         self.conn.commit()
 
-        # Очищення полів
         self.input_client.clear()
         self.input_phone.clear()
         self.input_model.clear()
@@ -611,12 +605,11 @@ class ServiceManagerApp(QMainWindow):
             cursor.execute(f"UPDATE service_orders SET {col_name} = ? WHERE id = ?", (new_val, order_id))
             self.conn.commit()
             
-            # Якщо змінили статус або дату — оновлюємо таблицю для пересортування
             if col in (5, 6):
                 self.load_orders()
 
     def on_cell_double_clicked(self, row, col):
-        if col == 0:  # Подвійний клік на ID відкриває картку
+        if col == 0:
             order_id = int(self.table.item(row, 0).text())
             dlg = OrderDetailsDialog(order_id, self.conn, self)
             dlg.exec()
