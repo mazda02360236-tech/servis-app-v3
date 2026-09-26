@@ -1041,6 +1041,8 @@ class ServiceManagerApp(QMainWindow):
             self.conn.commit()
 
             if column in (4, 10):
+                self.load_orders()
+            else:
                 self.apply_row_highlight(row)
 
     def is_overdue(self, date_in_str, status_str):
@@ -1053,6 +1055,28 @@ class ServiceManagerApp(QMainWindow):
             return (today - date_in).days > 14
         except ValueError:
             return False
+
+    def get_sort_key(self, row):
+        """Ключ для сортування замовлень за пріоритетом статусу"""
+        order_id = row[0]
+        date_in_str = format_date_to_ukr(row[4])
+        status_str = str(row[10]) if row[10] is not None else ""
+
+        overdue = self.is_overdue(date_in_str, status_str)
+
+        if overdue:
+            priority = 1      # 1. Прострочені
+        elif status_str == "Готово":
+            priority = 2      # 2. Готово
+        elif status_str in ["В роботі", "Очікує запчастин"]:
+            priority = 3      # 3. В роботі / Очікує запчастин
+        elif status_str == "Видано":
+            priority = 4      # 4. Виконані (Видано)
+        else:
+            priority = 5
+
+        # Вторинне сортування: нові замовлення з більшим ID зверху (-order_id)
+        return (priority, -order_id)
 
     def apply_row_highlight(self, row_idx):
         """Підсвічування рядка та випадаючого списку відповідно до статусу та термінів"""
@@ -1167,35 +1191,22 @@ class ServiceManagerApp(QMainWindow):
             today_str = QDate.currentDate().toString("dd.MM.yyyy")
             self.cursor.execute("UPDATE orders SET status = ?, date_out = ? WHERE id = ?", (new_status, today_str, order_id))
             self.conn.commit()
-
-            item_date = self.table.item(row_idx, 5)
-            if item_date:
-                item_date.setText(today_str)
-
-            if self.table.currentRow() == row_idx:
-                self.date_out_edit.setDate(QDate.currentDate())
         else:
             self.cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
             self.conn.commit()
 
-        item = self.table.item(row_idx, 10)
-        if item:
-            item.setText(new_status)
-
-        self.apply_row_highlight(row_idx)
-
-        if self.table.currentRow() == row_idx:
-            idx = self.status_box.findText(new_status)
-            if idx >= 0:
-                self.status_box.blockSignals(True)
-                self.status_box.setCurrentIndex(idx)
-                self.status_box.blockSignals(False)
+        # Автоматично оновлюємо та перегруповуємо список після зміни статусу
+        self.load_orders()
 
     def load_orders(self):
         self.is_loading = True
         self.table.setRowCount(0)
-        self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders ORDER BY id DESC")
+        self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders")
         rows = self.cursor.fetchall()
+        
+        # Сортування згідно з пріоритетами
+        rows.sort(key=self.get_sort_key)
+
         self.populate_table_rows(rows)
         self.is_loading = False
 
@@ -1206,7 +1217,7 @@ class ServiceManagerApp(QMainWindow):
         self.table.setRowCount(0)
         
         if not query:
-            self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders ORDER BY id DESC")
+            self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders")
         else:
             search_pattern = f"%{query}%"
             self.cursor.execute("""
@@ -1215,11 +1226,14 @@ class ServiceManagerApp(QMainWindow):
                 WHERE client_name LIKE ? 
                    OR phone LIKE ? 
                    OR item_name LIKE ? 
-                   OR serial_num LIKE ? 
-                ORDER BY id DESC
+                   OR serial_num LIKE ?
             """, (search_pattern, search_pattern, search_pattern, search_pattern))
             
         rows = self.cursor.fetchall()
+
+        # Сортування знайденого затиску згідно з пріоритетами
+        rows.sort(key=self.get_sort_key)
+
         self.populate_table_rows(rows)
         self.is_loading = False
 
