@@ -9,7 +9,8 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QMessageBox, QHeaderView, QDateEdit, QComboBox, QCheckBox, QDialog,
-    QFileDialog, QScrollArea, QStyledItemDelegate, QGroupBox, QFormLayout
+    QFileDialog, QScrollArea, QStyledItemDelegate, QGroupBox, QFormLayout,
+    QMenu
 )
 from PyQt6.QtCore import QDate, Qt, QEvent
 from PyQt6.QtGui import QPixmap, QColor
@@ -84,6 +85,32 @@ def get_logo_path():
         if os.path.exists(path):
             return path
     return None
+
+
+class StatusButton(QPushButton):
+    """Кнопка статусу, яка дозволяє зміну статусу тільки при подвійному кліку"""
+    def __init__(self, current_status, statuses, order_id, row_idx, parent_app, parent=None):
+        super().__init__(current_status, parent)
+        self.statuses = statuses
+        self.order_id = order_id
+        self.row_idx = row_idx
+        self.parent_app = parent_app
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Двічі клацніть, щоб змінити статус")
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            menu = QMenu(self)
+            for status in self.statuses:
+                action = menu.addAction(status)
+                if status == self.text():
+                    action.setCheckable(True)
+                    action.setChecked(True)
+                action.triggered.connect(
+                    lambda checked, s=status: self.parent_app.on_status_combo_changed(self.order_id, s, self.row_idx)
+                )
+            menu.exec(self.mapToGlobal(event.position().toPoint()))
+        super().mouseDoubleClickEvent(event)
 
 
 class OrderDetailsDialog(QDialog):
@@ -1079,23 +1106,23 @@ class ServiceManagerApp(QMainWindow):
         return (priority, -order_id)
 
     def apply_row_highlight(self, row_idx):
-        """Підсвічування рядка та випадаючого списку відповідно до статусу та термінів"""
+        """Підсвічування рядка та кнопки статусу відповідно до статусу та термінів"""
         date_in_str = self.get_cell_text(row_idx, 4)
         status_str = self.get_cell_text(row_idx, 10)
         overdue = self.is_overdue(date_in_str, status_str)
 
         bg_color = QColor("white")
-        combo_style = ""
+        btn_style = "QPushButton { background-color: #2980B9; color: white; padding: 3px; font-weight: bold; border-radius: 4px; border: none; }"
 
         if status_str == "Готово":
             bg_color = QColor("#FFF2CC")
-            combo_style = "QComboBox { background-color: #FFF2CC; border: 1px solid #F1C40F; padding: 2px; font-weight: bold; }"
+            btn_style = "QPushButton { background-color: #F1C40F; color: white; padding: 3px; font-weight: bold; border-radius: 4px; border: none; }"
         elif status_str == "Видано":
             bg_color = QColor("#D6EAF8")
-            combo_style = "QComboBox { background-color: #D6EAF8; border: 1px solid #7FB3D5; padding: 2px; font-weight: bold; }"
+            btn_style = "QPushButton { background-color: #27AE60; color: white; padding: 3px; font-weight: bold; border-radius: 4px; border: none; }"
         elif overdue:
             bg_color = QColor("#FADBD8")
-            combo_style = "QComboBox { background-color: #FADBD8; border: 1px solid #F5B7B1; padding: 2px; font-weight: bold; }"
+            btn_style = "QPushButton { background-color: #E74C3C; color: white; padding: 3px; font-weight: bold; border-radius: 4px; border: none; }"
 
         for col_idx in range(self.table.columnCount()):
             item = self.table.item(row_idx, col_idx)
@@ -1103,8 +1130,8 @@ class ServiceManagerApp(QMainWindow):
                 item.setBackground(bg_color)
 
         widget = self.table.cellWidget(row_idx, 10)
-        if isinstance(widget, QComboBox):
-            widget.setStyleSheet(combo_style)
+        if isinstance(widget, QPushButton):
+            widget.setStyleSheet(btn_style)
 
     def save_order(self):
         client = self.client_input.text().strip()
@@ -1159,19 +1186,9 @@ class ServiceManagerApp(QMainWindow):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
 
-            status_combo = QComboBox()
-            status_combo.addItems(self.statuses)
-            current_status = str(row_data[10]) if row_data[10] is not None else ""
-            if current_status in self.statuses:
-                status_combo.setCurrentText(current_status)
-            elif current_status:
-                status_combo.addItem(current_status)
-                status_combo.setCurrentText(current_status)
-
-            status_combo.currentTextChanged.connect(
-                lambda new_status, oid=order_id, r=row_idx: self.on_status_combo_changed(oid, new_status, r)
-            )
-            self.table.setCellWidget(row_idx, 10, status_combo)
+            current_status = str(row_data[10]) if row_data[10] is not None else "В роботі"
+            status_btn = StatusButton(current_status, self.statuses, order_id, row_idx, self)
+            self.table.setCellWidget(row_idx, 10, status_btn)
 
             self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (order_id,))
             photo_count = self.cursor.fetchone()[0]
