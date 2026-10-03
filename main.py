@@ -88,7 +88,7 @@ def get_logo_path():
 
 
 class StatusButton(QPushButton):
-    """Кнопка статусу, яка дозволяє зміну статусу тільки при подвійному кліку"""
+    """Кнопка статусу, яка дозволяє зміну статусу при подвійному кліку"""
     def __init__(self, current_status, statuses, order_id, row_idx, parent_app, parent=None):
         super().__init__(current_status, parent)
         self.statuses = statuses
@@ -179,7 +179,7 @@ class OrderDetailsDialog(QDialog):
         layout.addWidget(gb_client)
 
         # Блок: Інструмент
-        gb_item = QGroupBox("🛠️ Обладнання / Інструмент")
+        gb_item = QGroupBox("🛠️️ Обладнання / Інструмент")
         fl_item = QFormLayout(gb_item)
         fl_item.addRow("Товар / Модель:", QLabel(item or "—"))
         fl_item.addRow("Серійний номер:", QLabel(serial or "—"))
@@ -620,7 +620,6 @@ class ServiceManagerApp(QMainWindow):
         self.conn.commit()
 
     def init_ui(self):
-        # Увімкнення Drag & Drop для вікна
         self.setAcceptDrops(True)
 
         central_widget = QWidget()
@@ -773,10 +772,8 @@ class ServiceManagerApp(QMainWindow):
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        # Обробка події подвійного кліку по ячейці (для колонки ID)
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
 
-        # Налаштування Drag & Drop для таблиці
         self.table.setAcceptDrops(True)
         self.table.viewport().setAcceptDrops(True)
         self.table.installEventFilter(self)
@@ -802,7 +799,6 @@ class ServiceManagerApp(QMainWindow):
         self.load_orders()
 
     def on_cell_double_clicked(self, row, column):
-        """Відкриває картку замовлення при подвійному натисканні на колонку ID (0)"""
         if column == 0:
             order_id_str = self.get_cell_text(row, 0)
             if order_id_str:
@@ -812,7 +808,6 @@ class ServiceManagerApp(QMainWindow):
                 except ValueError:
                     pass
 
-    # --- МЕТОДИ DRAG & DROP ДЛЯ ДОДАВАННЯ ФОТОЗНІМКІВ ---
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() or event.mimeData().hasImage():
             event.acceptProposedAction()
@@ -1084,7 +1079,6 @@ class ServiceManagerApp(QMainWindow):
             return False
 
     def get_sort_key(self, row):
-        """Ключ для сортування замовлень за пріоритетом статусу"""
         order_id = row[0]
         date_in_str = format_date_to_ukr(row[4])
         status_str = str(row[10]) if row[10] is not None else ""
@@ -1092,21 +1086,19 @@ class ServiceManagerApp(QMainWindow):
         overdue = self.is_overdue(date_in_str, status_str)
 
         if overdue:
-            priority = 1      # 1. Прострочені
+            priority = 1
         elif status_str == "Готово":
-            priority = 2      # 2. Готово
+            priority = 2
         elif status_str in ["В роботі", "Очікує запчастин"]:
-            priority = 3      # 3. В роботі / Очікує запчастин
+            priority = 3
         elif status_str == "Видано":
-            priority = 4      # 4. Виконані (Видано)
+            priority = 4
         else:
             priority = 5
 
-        # Вторинне сортування: нові замовлення з більшим ID зверху (-order_id)
         return (priority, -order_id)
 
     def apply_row_highlight(self, row_idx):
-        """Підсвічування рядка та кнопки статусу відповідно до статусу та термінів"""
         date_in_str = self.get_cell_text(row_idx, 4)
         status_str = self.get_cell_text(row_idx, 10)
         overdue = self.is_overdue(date_in_str, status_str)
@@ -1172,7 +1164,6 @@ class ServiceManagerApp(QMainWindow):
         QMessageBox.information(self, "Успіх", "Замовлення збережено!")
 
     def populate_table_rows(self, rows):
-        """Наповнення таблиці даними та інтерактивними елементами"""
         for row_idx, row_data in enumerate(rows):
             self.table.insertRow(row_idx)
             order_id = row_data[0]
@@ -1212,7 +1203,6 @@ class ServiceManagerApp(QMainWindow):
             self.cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
             self.conn.commit()
 
-        # Автоматично оновлюємо та перегруповуємо список після зміни статусу
         self.load_orders()
 
     def load_orders(self):
@@ -1221,14 +1211,12 @@ class ServiceManagerApp(QMainWindow):
         self.cursor.execute("SELECT id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status FROM orders")
         rows = self.cursor.fetchall()
         
-        # Сортування згідно з пріоритетами
         rows.sort(key=self.get_sort_key)
 
         self.populate_table_rows(rows)
         self.is_loading = False
 
     def search_orders(self):
-        """Розширений пошук: ПІБ, Телефон, Товар/Модель, Серійний №"""
         self.is_loading = True
         query = self.search_input.text().strip()
         self.table.setRowCount(0)
@@ -1247,8 +1235,6 @@ class ServiceManagerApp(QMainWindow):
             """, (search_pattern, search_pattern, search_pattern, search_pattern))
             
         rows = self.cursor.fetchall()
-
-        # Сортування знайденого затиску згідно з пріоритетами
         rows.sort(key=self.get_sort_key)
 
         self.populate_table_rows(rows)
