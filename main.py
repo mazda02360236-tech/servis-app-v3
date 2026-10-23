@@ -1508,29 +1508,31 @@ class ServiceManagerApp(QMainWindow):
                 textColor=colors.black
             )
             issue_p = Paragraph(f"<b>Несправність:</b> {issue or '—'}", issue_style)
+            # Розміщуємо блок несправності в межах ширини квитанції
             issue_p.wrap(width - 40, 60)
+            # Малюємо параграф (рахуємо висоту, щоб підлаштувати позицію)
             issue_height = issue_p.height
             issue_p.drawOn(c, 20, y - issue_height + 5)
 
             y -= (issue_height + 12)
             c.line(20, y + 10, width - 20, y + 10)
 
-            # Виведення прикріплених фото у квитанцію зі збереженням реальних пропорцій (без розтягування)
+            # Виведення прикріплених фото у квитанцію (більші фото, опущені нижче)
             self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (order_id,))
             photos = self.cursor.fetchall()
 
             if photos:
                 c.setFont(self.font_name, 8)
                 c.drawString(20, y, f"Прикріплені фотографії ({len(photos)}):")
-                y -= 115  # Опускаємо нижче
+                y -= 115  # Опускаємо нижче для більших фото
                 photo_x = 20
                 for (p_path,) in photos[:2]:
                     if os.path.exists(p_path):
                         try:
-                            # Передаємо лише width=130, без фіксованої висоти — ReportLab автоматично зберігає пропорції
-                            img = RLImage(p_path, width=130)
+                            # Збільшено фото приблизно в 5 разів по площі (ширина 160, пропорційна висота)
+                            img = RLImage(p_path, width=160, height=100)
                             img.drawOn(c, photo_x, y)
-                            photo_x += 145
+                            photo_x += 175
                         except Exception:
                             pass
                 y -= 10
