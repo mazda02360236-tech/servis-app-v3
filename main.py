@@ -122,7 +122,7 @@ class OrderDetailsDialog(QDialog):
         self.cursor = self.conn.cursor()
 
         self.setWindowTitle(f"📋 Картка замовлення №{self.order_id}")
-        self.resize(700, 680)
+        self.resize(700, 720)
         self.init_ui()
 
     def init_ui(self):
@@ -130,7 +130,7 @@ class OrderDetailsDialog(QDialog):
 
         self.cursor.execute("""
             SELECT client_name, phone, date_sale, date_in, date_out,
-                   item_name, serial_num, equipment, issue, status
+                   item_name, serial_num, equipment, issue, status, first_date_in
             FROM orders WHERE id = ?
         """, (self.order_id,))
         row = self.cursor.fetchone()
@@ -139,7 +139,7 @@ class OrderDetailsDialog(QDialog):
             main_layout.addWidget(QLabel("Замовлення не знайдено."))
             return
 
-        client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status = row
+        client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status, first_date_in = row
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -156,6 +156,8 @@ class OrderDetailsDialog(QDialog):
             status_bg = "#F1C40F"
         elif status == "Видано":
             status_bg = "#27AE60"
+        elif status == "Повторний ремонт":
+            status_bg = "#D35400"
 
         status_lbl = QLabel(f"Статус: {status}")
         status_lbl.setStyleSheet(f"""
@@ -179,7 +181,7 @@ class OrderDetailsDialog(QDialog):
         layout.addWidget(gb_client)
 
         # Блок: Інструмент
-        gb_item = QGroupBox("🛠️️ Обладнання / Інструмент")
+        gb_item = QGroupBox("🛠 Обладнання / Інструмент")
         fl_item = QFormLayout(gb_item)
         fl_item.addRow("Товар / Модель:", QLabel(item or "—"))
         fl_item.addRow("Серійний номер:", QLabel(serial or "—"))
@@ -190,7 +192,9 @@ class OrderDetailsDialog(QDialog):
         gb_dates = QGroupBox("📅 Дати")
         fl_dates = QFormLayout(gb_dates)
         fl_dates.addRow("Дата продажу:", QLabel(format_date_to_ukr(date_sale) if date_sale else "—"))
-        fl_dates.addRow("Дата прийому:", QLabel(format_date_to_ukr(date_in)))
+        if first_date_in:
+            fl_dates.addRow("Дата першого ремонту:", QLabel(format_date_to_ukr(first_date_in)))
+        fl_dates.addRow("Дата прийому (актуальна):", QLabel(format_date_to_ukr(date_in)))
         fl_dates.addRow("Дата видачі:", QLabel(format_date_to_ukr(date_out)))
         layout.addWidget(gb_dates)
 
@@ -499,10 +503,15 @@ class TrashDialog(QDialog):
         issue = self.get_cell_text(selected_row, 9)
         status = self.get_cell_text(selected_row, 10)
 
+        # Отримуємо додаткові дані (first_date_in) з deleted_orders
+        self.cursor.execute("SELECT first_date_in FROM deleted_orders WHERE original_id = ?", (orig_id,))
+        res = self.cursor.fetchone()
+        first_date_in = res[0] if res else None
+
         self.cursor.execute("""
-            INSERT INTO orders (id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (orig_id, client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status))
+            INSERT INTO orders (id, client_name, phone, date_sale, date_in, date_out, item_name, serial_num, equipment, issue, status, first_date_in)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (orig_id, client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status, first_date_in))
 
         self.cursor.execute("DELETE FROM deleted_orders WHERE original_id = ?", (orig_id,))
         self.conn.commit()
@@ -553,7 +562,7 @@ class ServiceManagerApp(QMainWindow):
         self.logo_path = get_logo_path()
         self.is_loading = False
         self.selected_photos = []
-        self.statuses = ["В роботі", "Очікує запчастин", "Готово", "Видано"]
+        self.statuses = ["В роботі", "Очікує запчастин", "Готово", "Видано", "Повторний ремонт"]
         
         self.init_db()
         self.init_ui()
@@ -607,15 +616,20 @@ class ServiceManagerApp(QMainWindow):
             )
         """)
         
+        # Перевірка наявності додаткових колонок (міграції)
         self.cursor.execute("PRAGMA table_info(orders)")
         columns = [column[1] for column in self.cursor.fetchall()]
         if 'date_sale' not in columns:
             self.cursor.execute("ALTER TABLE orders ADD COLUMN date_sale TEXT")
+        if 'first_date_in' not in columns:
+            self.cursor.execute("ALTER TABLE orders ADD COLUMN first_date_in TEXT")
 
         self.cursor.execute("PRAGMA table_info(deleted_orders)")
         del_columns = [column[1] for column in self.cursor.fetchall()]
         if 'date_sale' not in del_columns:
             self.cursor.execute("ALTER TABLE deleted_orders ADD COLUMN date_sale TEXT")
+        if 'first_date_in' not in del_columns:
+            self.cursor.execute("ALTER TABLE deleted_orders ADD COLUMN first_date_in TEXT")
 
         self.conn.commit()
 
@@ -1087,14 +1101,16 @@ class ServiceManagerApp(QMainWindow):
 
         if overdue:
             priority = 1
-        elif status_str == "Готово":
+        elif status_str == "Повторний ремонт":
             priority = 2
-        elif status_str in ["В роботі", "Очікує запчастин"]:
+        elif status_str == "Готово":
             priority = 3
-        elif status_str == "Видано":
+        elif status_str in ["В роботі", "Очікує запчастин"]:
             priority = 4
-        else:
+        elif status_str == "Видано":
             priority = 5
+        else:
+            priority = 6
 
         return (priority, -order_id)
 
@@ -1112,6 +1128,9 @@ class ServiceManagerApp(QMainWindow):
         elif status_str == "Видано":
             bg_color = QColor("#D6EAF8")
             btn_style = "QPushButton { background-color: #27AE60; color: white; padding: 3px; font-weight: bold; border-radius: 4px; border: none; }"
+        elif status_str == "Повторний ремонт":
+            bg_color = QColor("#FCE4D6")
+            btn_style = "QPushButton { background-color: #D35400; color: white; padding: 3px; font-weight: bold; border-radius: 4px; border: none; }"
         elif overdue:
             bg_color = QColor("#FADBD8")
             btn_style = "QPushButton { background-color: #E74C3C; color: white; padding: 3px; font-weight: bold; border-radius: 4px; border: none; }"
@@ -1195,8 +1214,24 @@ class ServiceManagerApp(QMainWindow):
         if self.is_loading:
             return
 
-        if new_status == "Видано":
-            today_str = QDate.currentDate().toString("dd.MM.yyyy")
+        today_str = QDate.currentDate().toString("dd.MM.yyyy")
+
+        if new_status == "Повторний ремонт":
+            # Отримуємо поточну дати прийому та первинну дату
+            self.cursor.execute("SELECT date_in, first_date_in FROM orders WHERE id = ?", (order_id,))
+            row = self.cursor.fetchone()
+            if row:
+                current_date_in, existing_first_in = row
+                # Якщо першої дати ще немає, зберігаємо ту, яка була в date_in до цього
+                first_in = existing_first_in if existing_first_in else current_date_in
+                
+                self.cursor.execute("""
+                    UPDATE orders 
+                    SET status = ?, first_date_in = ?, date_in = ? 
+                    WHERE id = ?
+                """, (new_status, first_in, today_str, order_id))
+                self.conn.commit()
+        elif new_status == "Видано":
             self.cursor.execute("UPDATE orders SET status = ?, date_out = ? WHERE id = ?", (new_status, today_str, order_id))
             self.conn.commit()
         else:
@@ -1332,15 +1367,15 @@ class ServiceManagerApp(QMainWindow):
         if not order_id:
             return
 
-        self.cursor.execute("SELECT id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale FROM orders WHERE id = ?", (order_id,))
+        self.cursor.execute("SELECT id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale, first_date_in FROM orders WHERE id = ?", (order_id,))
         row = self.cursor.fetchone()
 
         if row:
             deleted_at = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
             self.cursor.execute("""
-                INSERT INTO deleted_orders (original_id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale, deleted_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], deleted_at))
+                INSERT INTO deleted_orders (original_id, client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale, deleted_at, first_date_in)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], deleted_at, row[11]))
 
             self.cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
             self.conn.commit()
