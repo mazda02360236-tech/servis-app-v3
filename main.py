@@ -503,7 +503,6 @@ class TrashDialog(QDialog):
         issue = self.get_cell_text(selected_row, 9)
         status = self.get_cell_text(selected_row, 10)
 
-        # Отримуємо додаткові дані (first_date_in) з deleted_orders
         self.cursor.execute("SELECT first_date_in FROM deleted_orders WHERE original_id = ?", (orig_id,))
         res = self.cursor.fetchone()
         first_date_in = res[0] if res else None
@@ -563,6 +562,7 @@ class ServiceManagerApp(QMainWindow):
         self.is_loading = False
         self.selected_photos = []
         self.statuses = ["В роботі", "Очікує запчастин", "Готово", "Видано", "Повторний ремонт"]
+        self.current_order_id = None  # Зберігає ID поточного редагованого замовлення
         
         self.init_db()
         self.init_ui()
@@ -616,7 +616,6 @@ class ServiceManagerApp(QMainWindow):
             )
         """)
         
-        # Перевірка наявності додаткових колонок (міграції)
         self.cursor.execute("PRAGMA table_info(orders)")
         columns = [column[1] for column in self.cursor.fetchall()]
         if 'date_sale' not in columns:
@@ -1165,22 +1164,36 @@ class ServiceManagerApp(QMainWindow):
             QMessageBox.warning(self, "Помилка", "Заповніть обов'язкові поля (Клієнт та Товар)!")
             return
 
-        self.cursor.execute("""
-            INSERT INTO orders (client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (client, phone, date_in, date_out, item, serial, equipment, issue, status, date_sale))
-        
-        order_id = self.cursor.lastrowid
+        # Якщо вибрано конкретне замовлення з таблиці – оновлюємо його
+        if self.current_order_id is not None:
+            self.cursor.execute("""
+                UPDATE orders 
+                SET client_name = ?, phone = ?, date_in = ?, date_out = ?, 
+                    item_name = ?, serial_num = ?, equipment = ?, issue = ?, 
+                    status = ?, date_sale = ?
+                WHERE id = ?
+            """, (client, phone, date_in, date_out, item, serial, equipment, issue, status, date_sale, self.current_order_id))
+            
+            order_id = self.current_order_id
+            msg = "Зміни в замовленні успішно збережено!"
+        else:
+            # Якщо замовлення не вибрано (створення нового)
+            self.cursor.execute("""
+                INSERT INTO orders (client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (client, phone, date_in, date_out, item, serial, equipment, issue, status, date_sale))
+            
+            order_id = self.cursor.lastrowid
+            self.current_order_id = order_id
+            msg = "Нове замовлення збережено!"
 
-        for photo_path in self.selected_photos:
-            if os.path.exists(photo_path):
-                self.add_photo_to_order(order_id, photo_path)
+            for photo_path in self.selected_photos:
+                if os.path.exists(photo_path):
+                    self.add_photo_to_order(order_id, photo_path)
 
         self.conn.commit()
-
-        self.clear_fields()
         self.load_orders()
-        QMessageBox.information(self, "Успіх", "Замовлення збережено!")
+        QMessageBox.information(self, "Успіх", msg)
 
     def populate_table_rows(self, rows):
         for row_idx, row_data in enumerate(rows):
@@ -1217,12 +1230,10 @@ class ServiceManagerApp(QMainWindow):
         today_str = QDate.currentDate().toString("dd.MM.yyyy")
 
         if new_status == "Повторний ремонт":
-            # Отримуємо поточну дати прийому та первинну дату
             self.cursor.execute("SELECT date_in, first_date_in FROM orders WHERE id = ?", (order_id,))
             row = self.cursor.fetchone()
             if row:
                 current_date_in, existing_first_in = row
-                # Якщо першої дати ще немає, зберігаємо ту, яка була в date_in до цього
                 first_in = existing_first_in if existing_first_in else current_date_in
                 
                 self.cursor.execute("""
@@ -1291,6 +1302,13 @@ class ServiceManagerApp(QMainWindow):
         if selected_row < 0:
             return
 
+        order_id_str = self.get_cell_text(selected_row, 0)
+        if order_id_str:
+            try:
+                self.current_order_id = int(order_id_str)
+            except ValueError:
+                self.current_order_id = None
+
         self.client_input.setText(self.get_cell_text(selected_row, 1))
         self.phone_input.setText(self.get_cell_text(selected_row, 2))
 
@@ -1333,16 +1351,16 @@ class ServiceManagerApp(QMainWindow):
             self.status_box.setCurrentIndex(idx)
             self.status_box.blockSignals(False)
 
-        order_id = self.get_cell_text(selected_row, 0)
-        if order_id:
+        if self.current_order_id:
             try:
-                self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (int(order_id),))
+                self.cursor.execute("SELECT COUNT(*) FROM order_photos WHERE order_id = ?", (self.current_order_id,))
                 count = self.cursor.fetchone()[0]
                 self.lbl_photo_count.setText(f"Обрано: 0" if count == 0 else f"Обрано: {count}")
             except Exception:
                 self.lbl_photo_count.setText("Обрано: 0")
 
     def clear_fields(self):
+        self.current_order_id = None  # Скидаємо ID, щоб кнопка збереження знову створювала нове замовлення
         self.client_input.clear()
         self.phone_input.clear()
         self.item_input.clear()
