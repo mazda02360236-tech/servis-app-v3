@@ -1428,4 +1428,125 @@ class ServiceManagerApp(QMainWindow):
 
             display_date_sale = format_date_to_ukr(date_sale) if (date_sale and date_sale != "None") else "—"
             display_date_in = format_date_to_ukr(date_in)
-            display_date
+            display_date_out = format_date_to_ukr(date_out)
+            display_first_in = format_date_to_ukr(first_date_in) if first_date_in else None
+
+            docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
+            pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
+            
+            c = canvas.Canvas(pdf_filename, pagesize=A4)
+            width, height = A4
+            half_height = height / 2
+
+            # Рамка для А5 формату (половина сторінки А4)
+            c.setStrokeColor(colors.HexColor("#2C3E50"))
+            c.setLineWidth(1.5)
+            c.rect(10, half_height + 10, width - 20, half_height - 20)
+
+            # Шапка
+            c.setFillColor(colors.HexColor("#2C3E50"))
+            c.rect(10, height - 45, width - 20, 35, fill=1, stroke=0)
+
+            text_x = 20
+            if self.logo_path:
+                try:
+                    c.drawImage(self.logo_path, 15, height - 42, width=70, height=28, preserveAspectRatio=True, mask='auto')
+                    text_x = 95
+                except Exception:
+                    pass
+
+            c.setFillColor(colors.white)
+            c.setFont(self.font_name, 10.5)
+            c.drawString(text_x, height - 30, f"АКТ-КВИТАНЦІЯ № {order_id} [{status}]")
+            
+            c.setFont(self.font_name, 9)
+            c.drawRightString(width - 20, height - 30, f"Прийом: {display_date_in}")
+
+            c.setFillColor(colors.black)
+            y = height - 65
+
+            c.setLineWidth(0.5)
+            c.setStrokeColor(colors.HexColor("#BDC3C7"))
+
+            c.setFont(self.font_name, 9.5)
+            c.drawString(20, y, f"Клієнт: {client or '—'}")
+            c.drawRightString(width - 20, y, f"Телефон: {phone or '—'}")
+            
+            y -= 18
+            c.line(20, y + 10, width - 20, y + 10)
+
+            c.drawString(20, y, f"Товар / Модель: {item or '—'}")
+            c.drawString(320, y, f"Серійний №: {serial or '—'}")
+
+            y -= 18
+            c.drawString(20, y, f"Комплектація: {equipment or '—'}")
+            c.drawString(320, y, f"Дата продажу: {display_date_sale}")
+
+            y -= 18
+            if display_first_in:
+                c.drawString(20, y, f"Дата 1-го ремонту: {display_first_in}")
+                c.drawString(320, y, f"Планова видача: {display_date_out}")
+            else:
+                c.drawString(20, y, f"Планова дата видачі: {display_date_out}")
+
+            y -= 15
+            c.line(20, y + 10, width - 20, y + 10)
+
+            c.drawString(20, y, f"Несправність: {issue or '—'}")
+
+            y -= 15
+            c.line(20, y + 10, width - 20, y + 10)
+
+            # Виведення прикріплених фото у квитанцію (до 2-х фото для збереження компактності)
+            self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (order_id,))
+            photos = self.cursor.fetchall()
+
+            if photos:
+                c.setFont(self.font_name, 8)
+                c.drawString(20, y, f"Прикріплені фотографії ({len(photos)}):")
+                y -= 52
+                photo_x = 20
+                for (p_path,) in photos[:2]:
+                    if os.path.exists(p_path):
+                        try:
+                            c.drawImage(p_path, photo_x, y, width=70, height=45, preserveAspectRatio=True, mask='auto')
+                            photo_x += 80
+                        except Exception:
+                            pass
+                y -= 5
+            else:
+                y -= 10
+
+            c.setFont(self.font_name, 7)
+            c.setFillColor(colors.HexColor("#444444"))
+            notes = (
+                "1. Видача здійснюється за наявності даної квитанції.\n"
+                "2. Сервісний центр не відповідає за збереження даних.\n"
+                "3. Готове обладнання зберігається безоплатно протягом 30 днів."
+            )
+            text_obj = c.beginText(20, y)
+            text_obj.setLeading(9)
+            for line in notes.split('\n'):
+                text_obj.textLine(line)
+            c.drawText(text_obj)
+
+            y_sig = half_height + 25
+            c.setFont(self.font_name, 8.5)
+            c.setFillColor(colors.black)
+            c.drawString(20, y_sig, "Замовник: _________________ (підпис)")
+            c.drawRightString(width - 20, y_sig, "Прийняв: _________________ (підпис)")
+
+            c.save()
+
+            QMessageBox.information(self, "Успіх", f"Квитанцію завантажено:\n{pdf_filename}")
+
+            if sys.platform == "win32":
+                os.startfile(pdf_filename)
+        except Exception as e:
+            QMessageBox.critical(self, "Помилка", f"Не вдалося створити квитанцію: {str(e)}")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = ServiceManagerApp()
+    window.show()
+    sys.exit(app.exec())
