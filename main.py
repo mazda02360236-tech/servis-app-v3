@@ -20,6 +20,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
+from reportlab.platypus import Paragraph, Image as RLImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # --- ВИЗНАЧЕННЯ БАЗОВОЇ ПАПКИ ТА UPLOAD_DIR В APPDATA ---
 if getattr(sys, 'frozen', False):
@@ -194,7 +196,9 @@ class OrderDetailsDialog(QDialog):
         fl_dates.addRow("Дата продажу:", QLabel(format_date_to_ukr(date_sale) if date_sale else "—"))
         if first_date_in:
             fl_dates.addRow("Дата першого ремонту:", QLabel(format_date_to_ukr(first_date_in)))
-        fl_dates.addRow("Дата прийому (актуальна):", QLabel(format_date_to_ukr(date_in)))
+            fl_dates.addRow("Дата повторного ремонту:", QLabel(format_date_to_ukr(date_in)))
+        else:
+            fl_dates.addRow("Дата прийому:", QLabel(format_date_to_ukr(date_in)))
         fl_dates.addRow("Дата видачі:", QLabel(format_date_to_ukr(date_out)))
         layout.addWidget(gb_dates)
 
@@ -1486,34 +1490,52 @@ class ServiceManagerApp(QMainWindow):
             if display_first_in:
                 c.drawString(20, y, f"Дата 1-го ремонту: {display_first_in}")
                 c.drawString(320, y, f"Планова видача: {display_date_out}")
+                y -= 18
+                c.drawString(20, y, f"Дата повторного ремонту: {display_date_in}")
             else:
                 c.drawString(20, y, f"Планова дата видачі: {display_date_out}")
 
             y -= 15
             c.line(20, y + 10, width - 20, y + 10)
 
-            c.drawString(20, y, f"Несправність: {issue or '—'}")
+            # Виведення несправності через Paragraph для повного перенесення рядків без обрізання
+            c.setFont(self.font_name, 9)
+            issue_style = ParagraphStyle(
+                'IssueStyle',
+                fontName=self.font_name,
+                fontSize=9,
+                leading=12,
+                textColor=colors.black
+            )
+            issue_p = Paragraph(f"<b>Несправність:</b> {issue or '—'}", issue_style)
+            # Розміщуємо блок несправності в межах ширини квитанції
+            issue_p.wrap(width - 40, 60)
+            # Малюємо параграф (рахуємо висоту, щоб підлаштувати позицію)
+            issue_height = issue_p.height
+            issue_p.drawOn(c, 20, y - issue_height + 5)
 
-            y -= 15
+            y -= (issue_height + 12)
             c.line(20, y + 10, width - 20, y + 10)
 
-            # Виведення прикріплених фото у квитанцію (до 2-х фото для збереження компактності)
+            # Виведення прикріплених фото у квитанцію (більші фото, опущені нижче)
             self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (order_id,))
             photos = self.cursor.fetchall()
 
             if photos:
                 c.setFont(self.font_name, 8)
                 c.drawString(20, y, f"Прикріплені фотографії ({len(photos)}):")
-                y -= 52
+                y -= 115  # Опускаємо нижче для більших фото
                 photo_x = 20
                 for (p_path,) in photos[:2]:
                     if os.path.exists(p_path):
                         try:
-                            c.drawImage(p_path, photo_x, y, width=70, height=45, preserveAspectRatio=True, mask='auto')
-                            photo_x += 80
+                            # Збільшено фото приблизно в 5 разів по площі (ширина 160, пропорційна висота)
+                            img = RLImage(p_path, width=160, height=100)
+                            img.drawOn(c, photo_x, y)
+                            photo_x += 175
                         except Exception:
                             pass
-                y -= 5
+                y -= 10
             else:
                 y -= 10
 
