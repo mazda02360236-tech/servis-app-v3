@@ -275,7 +275,9 @@ class OrderDetailsDialog(QDialog):
         main_layout.addLayout(btn_layout)
 
     def print_receipt(self):
-        if self.parent() and hasattr(self.parent(), 'print_receipt'):
+        if self.parent() and hasattr(self.parent(), 'print_receipt_for_id'):
+            self.parent().print_receipt_for_id(self.order_id)
+        elif self.parent() and hasattr(self.parent(), 'print_receipt'):
             self.parent().print_receipt()
 
 
@@ -562,7 +564,7 @@ class ServiceManagerApp(QMainWindow):
         self.is_loading = False
         self.selected_photos = []
         self.statuses = ["В роботі", "Очікує запчастин", "Готово", "Видано", "Повторний ремонт"]
-        self.current_order_id = None  # Зберігає ID поточного редагованого замовлення
+        self.current_order_id = None
         
         self.init_db()
         self.init_ui()
@@ -1164,7 +1166,6 @@ class ServiceManagerApp(QMainWindow):
             QMessageBox.warning(self, "Помилка", "Заповніть обов'язкові поля (Клієнт та Товар)!")
             return
 
-        # Якщо вибрано конкретне замовлення з таблиці – оновлюємо його
         if self.current_order_id is not None:
             self.cursor.execute("""
                 UPDATE orders 
@@ -1177,7 +1178,6 @@ class ServiceManagerApp(QMainWindow):
             order_id = self.current_order_id
             msg = "Зміни в замовленні успішно збережено!"
         else:
-            # Якщо замовлення не вибрано (створення нового)
             self.cursor.execute("""
                 INSERT INTO orders (client_name, phone, date_in, date_out, item_name, serial_num, equipment, issue, status, date_sale)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1360,7 +1360,7 @@ class ServiceManagerApp(QMainWindow):
                 self.lbl_photo_count.setText("Обрано: 0")
 
     def clear_fields(self):
-        self.current_order_id = None  # Скидаємо ID, щоб кнопка збереження знову створювала нове замовлення
+        self.current_order_id = None
         self.client_input.clear()
         self.phone_input.clear()
         self.item_input.clear()
@@ -1407,115 +1407,25 @@ class ServiceManagerApp(QMainWindow):
         if selected_row == -1:
             QMessageBox.warning(self, "Увага", "Будь ласка, оберіть замовлення зі списку таблиці!")
             return
+        order_id = self.get_cell_text(selected_row, 0)
+        if order_id:
+            self.print_receipt_for_id(int(order_id))
 
+    def print_receipt_for_id(self, order_id):
         try:
-            order_id = self.get_cell_text(selected_row, 0)
-            client = self.get_cell_text(selected_row, 1)
-            phone = self.get_cell_text(selected_row, 2)
-            date_sale = format_date_to_ukr(self.get_cell_text(selected_row, 3))
-            date_in = format_date_to_ukr(self.get_cell_text(selected_row, 4))
-            date_out = format_date_to_ukr(self.get_cell_text(selected_row, 5))
-            item = self.get_cell_text(selected_row, 6)
-            serial = self.get_cell_text(selected_row, 7)
-            equipment = self.get_cell_text(selected_row, 8)
-            issue = self.get_cell_text(selected_row, 9)
-            status = self.get_cell_text(selected_row, 10)
+            self.cursor.execute("""
+                SELECT client_name, phone, date_sale, date_in, date_out,
+                       item_name, serial_num, equipment, issue, status, first_date_in
+                FROM orders WHERE id = ?
+            """, (order_id,))
+            row = self.cursor.fetchone()
 
-            display_date_sale = date_sale if (date_sale and date_sale != "None") else "—"
+            if not row:
+                QMessageBox.warning(self, "Помилка", "Замовлення не знайдено!")
+                return
 
-            docs_dir = os.path.join(os.path.expanduser('~'), 'Documents')
-            pdf_filename = os.path.join(docs_dir, f"Квитанция_A5_{order_id}.pdf")
-            
-            c = canvas.Canvas(pdf_filename, pagesize=A4)
-            width, height = A4
+            client, phone, date_sale, date_in, date_out, item, serial, equipment, issue, status, first_date_in = row
 
-            half_height = height / 2
-
-            c.setStrokeColor(colors.HexColor("#2C3E50"))
-            c.setLineWidth(1.5)
-            c.rect(10, half_height + 10, width - 20, half_height - 20)
-
-            c.setFillColor(colors.HexColor("#2C3E50"))
-            c.rect(10, height - 45, width - 20, 35, fill=1, stroke=0)
-
-            text_x = 20
-            if self.logo_path:
-                try:
-                    c.drawImage(self.logo_path, 15, height - 42, width=70, height=28, preserveAspectRatio=True, mask='auto')
-                    text_x = 95
-                except Exception:
-                    pass
-
-            c.setFillColor(colors.white)
-            c.setFont(self.font_name, 11)
-            c.drawString(text_x, height - 30, f"АКТ-КВИТАНЦІЯ ПРИЙОМУ № {order_id}")
-            
-            c.setFont(self.font_name, 9)
-            c.drawRightString(width - 20, height - 30, f"Дата прийому: {date_in}")
-
-            c.setFillColor(colors.black)
-            y = height - 65
-
-            c.setLineWidth(0.5)
-            c.setStrokeColor(colors.HexColor("#BDC3C7"))
-
-            c.setFont(self.font_name, 10)
-            c.drawString(20, y, f"Клієнт (ПІБ): {client}")
-            c.drawRightString(width - 20, y, f"Телефон: {phone}")
-            
-            y -= 20
-            c.line(20, y + 12, width - 20, y + 12)
-
-            c.drawString(20, y, f"Товар / Інструмент: {item}")
-            c.drawString(320, y, f"Серійний №: {serial}")
-
-            y -= 20
-            c.drawString(20, y, f"Комплектація: {equipment}")
-            c.drawString(320, y, f"Дата продажу: {display_date_sale}")
-
-            y -= 20
-            c.drawString(20, y, f"Статус: {status}")
-            c.drawString(320, y, f"Планова дата видачі: {date_out}")
-
-            y -= 15
-            c.line(20, y + 10, width - 20, y + 10)
-
-            c.drawString(20, y, f"Несправність: {issue}")
-
-            y -= 15
-            c.line(20, y + 10, width - 20, y + 10)
-
-            y -= 15
-            c.setFont(self.font_name, 7.5)
-            c.setFillColor(colors.HexColor("#444444"))
-            notes = (
-                "1. Видача здійснюється за наявності даної квитанції.\n"
-                "2. Сервісний центр не відповідає за збереження даних.\n"
-                "3. Готове обладнання зберігається безоплатно протягом 30 днів."
-            )
-            text_obj = c.beginText(20, y)
-            text_obj.setLeading(10)
-            for line in notes.split('\n'):
-                text_obj.textLine(line)
-            c.drawText(text_obj)
-
-            y_sig = half_height + 30
-            c.setFont(self.font_name, 9)
-            c.setFillColor(colors.black)
-            c.drawString(20, y_sig, "Замовник: _________________ (підпис)")
-            c.drawRightString(width - 20, y_sig, "Прийняв: _________________ (підпис)")
-
-            c.save()
-
-            QMessageBox.information(self, "Успіх", f"Квитанцію завантажено:\n{pdf_filename}")
-
-            if sys.platform == "win32":
-                os.startfile(pdf_filename)
-        except Exception as e:
-            QMessageBox.critical(self, "Помилка", f"Не вдалося створити квитанцію: {str(e)}")
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = ServiceManagerApp()
-    window.show()
-    sys.exit(app.exec())
+            display_date_sale = format_date_to_ukr(date_sale) if (date_sale and date_sale != "None") else "—"
+            display_date_in = format_date_to_ukr(date_in)
+            display_date
