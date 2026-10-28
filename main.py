@@ -23,14 +23,13 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import Paragraph, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-# --- ПРИВ'ЯЗКА ДО GOOGLE ДИСКУ (G:) ---
+# --- ВИЗНАЧЕННЯ БАЗОВОЇ ПАПКИ ТА UPLOAD_DIR В APPDATA ---
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Шлях до спільної папки на Google Диску для синхронізації між ПК
-APP_DATA_DIR = r"G:\My Drive\ServiceManager"
+APP_DATA_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'ServiceManager')
 os.makedirs(APP_DATA_DIR, exist_ok=True)
 
 UPLOAD_DIR = os.path.join(APP_DATA_DIR, "uploads")
@@ -1473,4 +1472,103 @@ class ServiceManagerApp(QMainWindow):
             c.setLineWidth(0.5)
             c.setStrokeColor(colors.HexColor("#BDC3C7"))
 
-            c.setFont(self.font_name, 9.5
+            c.setFont(self.font_name, 9.5)
+            c.drawString(20, y, f"Клієнт: {client or '—'}")
+            c.drawRightString(width - 20, y, f"Телефон: {phone or '—'}")
+            
+            y -= 18
+            c.line(20, y + 10, width - 20, y + 10)
+
+            c.drawString(20, y, f"Товар / Модель: {item or '—'}")
+            c.drawString(320, y, f"Серійний №: {serial or '—'}")
+
+            y -= 18
+            c.drawString(20, y, f"Комплектація: {equipment or '—'}")
+            c.drawString(320, y, f"Дата продажу: {display_date_sale}")
+
+            y -= 18
+            if display_first_in:
+                c.drawString(20, y, f"Дата 1-го ремонту: {display_first_in}")
+                c.drawString(320, y, f"Планова видача: {display_date_out}")
+                y -= 18
+                c.drawString(20, y, f"Дата повторного ремонту: {display_date_in}")
+            else:
+                c.drawString(20, y, f"Планова дата видачі: {display_date_out}")
+
+            y -= 15
+            c.line(20, y + 10, width - 20, y + 10)
+
+            # Виведення несправності через Paragraph для повного перенесення рядків без обрізання
+            c.setFont(self.font_name, 9)
+            issue_style = ParagraphStyle(
+                'IssueStyle',
+                fontName=self.font_name,
+                fontSize=9,
+                leading=12,
+                textColor=colors.black
+            )
+            issue_p = Paragraph(f"<b>Несправність:</b> {issue or '—'}", issue_style)
+            # Розміщуємо блок несправності в межах ширини квитанції
+            issue_p.wrap(width - 40, 60)
+            # Малюємо параграф (рахуємо висоту, щоб підлаштувати позицію)
+            issue_height = issue_p.height
+            issue_p.drawOn(c, 20, y - issue_height + 5)
+
+            y -= (issue_height + 12)
+            c.line(20, y + 10, width - 20, y + 10)
+
+            # Виведення прикріплених фото у квитанцію (більші фото, опущені нижче)
+            self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (order_id,))
+            photos = self.cursor.fetchall()
+
+            if photos:
+                c.setFont(self.font_name, 8)
+                c.drawString(20, y, f"Прикріплені фотографії ({len(photos)}):")
+                y -= 115  # Опускаємо нижче для більших фото
+                photo_x = 20
+                for (p_path,) in photos[:2]:
+                    if os.path.exists(p_path):
+                        try:
+                            # Збільшено фото приблизно в 5 разів по площі (ширина 160, пропорційна висота)
+                            img = RLImage(p_path, width=160, height=100)
+                            img.drawOn(c, photo_x, y)
+                            photo_x += 175
+                        except Exception:
+                            pass
+                y -= 10
+            else:
+                y -= 10
+
+            c.setFont(self.font_name, 7)
+            c.setFillColor(colors.HexColor("#444444"))
+            notes = (
+                "1. Видача здійснюється за наявності даної квитанції.\n"
+                "2. Сервісний центр не відповідає за збереження даних.\n"
+                "3. Готове обладнання зберігається безоплатно протягом 30 днів."
+            )
+            text_obj = c.beginText(20, y)
+            text_obj.setLeading(9)
+            for line in notes.split('\n'):
+                text_obj.textLine(line)
+            c.drawText(text_obj)
+
+            y_sig = half_height + 25
+            c.setFont(self.font_name, 8.5)
+            c.setFillColor(colors.black)
+            c.drawString(20, y_sig, "Замовник: _________________ (підпис)")
+            c.drawRightString(width - 20, y_sig, "Прийняв: _________________ (підпис)")
+
+            c.save()
+
+            QMessageBox.information(self, "Успіх", f"Квитанцію завантажено:\n{pdf_filename}")
+
+            if sys.platform == "win32":
+                os.startfile(pdf_filename)
+        except Exception as e:
+            QMessageBox.critical(self, "Помилка", f"Не вдалося створити квитанцію: {str(e)}")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = ServiceManagerApp()
+    window.show()
+    sys.exit(app.exec())
