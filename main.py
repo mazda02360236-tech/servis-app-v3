@@ -23,17 +23,18 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import Paragraph, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-# --- ВИЗНАЧЕННЯ БАЗОВОЇ ПАПКИ ТА РОБОЧИХ ДИРЕКТОРІЙ РЯДЧОМ З ПРОГРАМОЮ ---
+# --- БЕЗПЕЧНІ ШЛЯХИ ДЛЯ ПРОГРАМИ ---
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Зберігаємо базу даних та фото прямо в папці програми (для синхронізації через Google Диск)
-APP_DATA_DIR = BASE_DIR
+# Зберігаємо налаштування та тимчасові файли у системному профілі (щоб Windows не блокувала файл)
+APP_DATA_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'ServiceManager')
 os.makedirs(APP_DATA_DIR, exist_ok=True)
 
-UPLOAD_DIR = os.path.join(APP_DATA_DIR, "uploads")
+# Папка для фото залишається поруч з програмою на Google Диску, щоб вона синхронізувалася між ПК!
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 PYTHON_DATE_FORMAT = "%d.%m.%Y"
@@ -149,7 +150,6 @@ class OrderDetailsDialog(QDialog):
         content = QWidget()
         layout = QVBoxLayout(content)
 
-        # Шапка картки
         header_layout = QHBoxLayout()
         title = QLabel(f"ЗАМОВЛЕННЯ № {self.order_id}")
         title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2C3E50;")
@@ -176,14 +176,12 @@ class OrderDetailsDialog(QDialog):
         header_layout.addWidget(status_lbl)
         layout.addLayout(header_layout)
 
-        # Блок: Клієнт
         gb_client = QGroupBox("👤 Інформація про клієнта")
         fl_client = QFormLayout(gb_client)
         fl_client.addRow("ПІБ Клієнта:", QLabel(client or "—"))
         fl_client.addRow("Телефон:", QLabel(phone or "—"))
         layout.addWidget(gb_client)
 
-        # Блок: Інструмент
         gb_item = QGroupBox("🛠 Обладнання / Інструмент")
         fl_item = QFormLayout(gb_item)
         fl_item.addRow("Товар / Модель:", QLabel(item or "—"))
@@ -191,7 +189,6 @@ class OrderDetailsDialog(QDialog):
         fl_item.addRow("Комплектація:", QLabel(equipment or "—"))
         layout.addWidget(gb_item)
 
-        # Блок: Дати
         gb_dates = QGroupBox("📅 Дати")
         fl_dates = QFormLayout(gb_dates)
         fl_dates.addRow("Дата продажу:", QLabel(format_date_to_ukr(date_sale) if date_sale else "—"))
@@ -203,7 +200,6 @@ class OrderDetailsDialog(QDialog):
         fl_dates.addRow("Дата видачі:", QLabel(format_date_to_ukr(date_out)))
         layout.addWidget(gb_dates)
 
-        # Блок: Несправність
         gb_issue = QGroupBox("⚠️ Опис несправності")
         l_issue = QVBoxLayout(gb_issue)
         lbl_issue_text = QLabel(issue or "Опис відсутній")
@@ -212,7 +208,6 @@ class OrderDetailsDialog(QDialog):
         l_issue.addWidget(lbl_issue_text)
         layout.addWidget(gb_issue)
 
-        # Блок: Фотографії
         self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (self.order_id,))
         photos = self.cursor.fetchall()
 
@@ -263,7 +258,6 @@ class OrderDetailsDialog(QDialog):
         scroll.setWidget(content)
         main_layout.addWidget(scroll)
 
-        # Нижній блок кнопок
         btn_layout = QHBoxLayout()
         
         btn_print = QPushButton("🖨️ Друк квитанції (А5)")
@@ -575,7 +569,7 @@ class ServiceManagerApp(QMainWindow):
         self.init_ui()
 
     def init_db(self):
-        # База даних тепер зберігається в тій самій папці, де і запуск програми (Google Диск)
+        # База даних у безпечній папці AppData
         db_path = os.path.join(APP_DATA_DIR, "service_orders.db")
         
         self.conn = sqlite3.connect(db_path)
