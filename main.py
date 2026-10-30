@@ -23,13 +23,14 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import Paragraph, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-# --- ВИЗНАЧЕННЯ БАЗОВОЇ ПАПКИ ТА UPLOAD_DIR В APPDATA ---
+# --- ВИЗНАЧЕННЯ БАЗОВОЇ ПАПКИ ТА РОБОЧИХ ДИРЕКТОРІЙ РЯДЧОМ З ПРОГРАМОЮ ---
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-APP_DATA_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'ServiceManager')
+# Зберігаємо базу даних та фото прямо в папці програми (для синхронізації через Google Диск)
+APP_DATA_DIR = BASE_DIR
 os.makedirs(APP_DATA_DIR, exist_ok=True)
 
 UPLOAD_DIR = os.path.join(APP_DATA_DIR, "uploads")
@@ -574,6 +575,7 @@ class ServiceManagerApp(QMainWindow):
         self.init_ui()
 
     def init_db(self):
+        # База даних тепер зберігається в тій самій папці, де і запуск програми (Google Диск)
         db_path = os.path.join(APP_DATA_DIR, "service_orders.db")
         
         self.conn = sqlite3.connect(db_path)
@@ -1442,12 +1444,10 @@ class ServiceManagerApp(QMainWindow):
             width, height = A4
             half_height = height / 2
 
-            # Рамка для А5 формату (половина сторінки А4)
             c.setStrokeColor(colors.HexColor("#2C3E50"))
             c.setLineWidth(1.5)
             c.rect(10, half_height + 10, width - 20, half_height - 20)
 
-            # Шапка
             c.setFillColor(colors.HexColor("#2C3E50"))
             c.rect(10, height - 45, width - 20, 35, fill=1, stroke=0)
 
@@ -1498,7 +1498,6 @@ class ServiceManagerApp(QMainWindow):
             y -= 15
             c.line(20, y + 10, width - 20, y + 10)
 
-            # Виведення несправності через Paragraph для повного перенесення рядків без обрізання
             c.setFont(self.font_name, 9)
             issue_style = ParagraphStyle(
                 'IssueStyle',
@@ -1508,28 +1507,24 @@ class ServiceManagerApp(QMainWindow):
                 textColor=colors.black
             )
             issue_p = Paragraph(f"<b>Несправність:</b> {issue or '—'}", issue_style)
-            # Розміщуємо блок несправності в межах ширини квитанції
             issue_p.wrap(width - 40, 60)
-            # Малюємо параграф (рахуємо висоту, щоб підлаштувати позицію)
             issue_height = issue_p.height
             issue_p.drawOn(c, 20, y - issue_height + 5)
 
             y -= (issue_height + 12)
             c.line(20, y + 10, width - 20, y + 10)
 
-            # Виведення прикріплених фото у квитанцію (більші фото, опущені нижче)
             self.cursor.execute("SELECT photo_path FROM order_photos WHERE order_id = ?", (order_id,))
             photos = self.cursor.fetchall()
 
             if photos:
                 c.setFont(self.font_name, 8)
                 c.drawString(20, y, f"Прикріплені фотографії ({len(photos)}):")
-                y -= 115  # Опускаємо нижче для більших фото
+                y -= 115
                 photo_x = 20
                 for (p_path,) in photos[:2]:
                     if os.path.exists(p_path):
                         try:
-                            # Збільшено фото приблизно в 5 разів по площі (ширина 160, пропорційна висота)
                             img = RLImage(p_path, width=160, height=100)
                             img.drawOn(c, photo_x, y)
                             photo_x += 175
